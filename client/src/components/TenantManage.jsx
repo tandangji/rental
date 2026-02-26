@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import TenantForm from './TenantForm';
-import { Plus, Pencil, Trash2, Building, Phone, Mail } from 'lucide-react';
+import { Plus, Pencil, Trash2, Building, Phone, Mail, CalendarDays } from 'lucide-react';
 
 export default function TenantManage() {
   const [tenants, setTenants] = useState([]);
@@ -99,6 +99,7 @@ export default function TenantManage() {
                 {t.lease_start && t.lease_end && (
                   <span className="flex items-center gap-1"><Building className="w-3 h-3" />{t.lease_start} ~ {t.lease_end}</span>
                 )}
+                <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" />청구일: 매월 {t.billing_day}일</span>
               </div>
 
               {!t.is_active && (

@@ -20,6 +20,7 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
     deposit_amount: tenant?.deposit_amount || 0,
     lease_start: tenant?.lease_start?.slice(0, 10) || '',
     lease_end: tenant?.lease_end?.slice(0, 10) || '',
+    billing_day: tenant?.billing_day || 1,
     is_active: tenant?.is_active ?? true,
   });
   const [error, setError] = useState('');
@@ -32,7 +33,7 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
     setError('');
     setSaving(true);
     try {
-      const body = { ...form, rent_amount: Number(form.rent_amount), maintenance_fee: Number(form.maintenance_fee), deposit_amount: Number(form.deposit_amount), floor: Number(form.floor) };
+      const body = { ...form, rent_amount: Number(form.rent_amount), maintenance_fee: Number(form.maintenance_fee), deposit_amount: Number(form.deposit_amount), floor: Number(form.floor), billing_day: Number(form.billing_day) };
       const url = isEdit ? `${API_BASE}/tenants/${tenant.id}` : `${API_BASE}/tenants`;
       const method = isEdit ? 'PUT' : 'POST';
       const res = await authFetch(url, {
@@ -130,7 +131,7 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">계약 시작일</label>
               <input type="date" value={form.lease_start} onChange={(e) => set('lease_start', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
@@ -138,6 +139,14 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">계약 종료일</label>
               <input type="date" value={form.lease_end} onChange={(e) => set('lease_end', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">청구일</label>
+              <select value={form.billing_day} onChange={(e) => set('billing_day', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                  <option key={d} value={d}>{d}일</option>
+                ))}
+              </select>
             </div>
           </div>
 

@@ -110,7 +110,7 @@ export default function BillingView() {
 
       {/* Info: 임대료/관리비 자동생성 안내 */}
       <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-700 text-xs">
-        임대료/관리비는 매월 청구일에 자동 생성됩니다. 아래에서 건물 공과금 입력 후 공과금 배분을 실행하세요.
+        임대료/관리비는 각 입주사의 청구일에 자동 생성됩니다. 아래에서 건물 공과금 입력 후 공과금 배분을 실행하세요.
       </div>
 
       {/* Generate button */}
@@ -219,7 +219,7 @@ export default function BillingView() {
       </div>
 
       {bills.length === 0 && (
-        <p className="text-center py-8 text-gray-400">청구서가 없습니다. 청구일에 임대료/관리비가 자동 생성됩니다.</p>
+        <p className="text-center py-8 text-gray-400">청구서가 없습니다. 각 입주사의 청구일에 임대료/관리비가 자동 생성됩니다.</p>
       )}
     </div>
   );
