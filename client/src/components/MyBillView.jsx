@@ -84,6 +84,16 @@ export default function MyBillView({ user, settings }) {
         </select>
       </div>
 
+      {/* 유의사항 — 상단 고정 */}
+      <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 leading-relaxed">
+        <p className="font-semibold mb-1">유의사항</p>
+        <ul className="list-disc pl-4 space-y-0.5">
+          <li>청구서 보관이 필요한 경우 PDF 다운로드하여 직접 보관하시기 바랍니다.</li>
+          <li>관리사무소에서는 별도의 청구서 사본을 제공하지 않습니다.</li>
+          <li>납부기한 경과 시 월 2%의 연체이자가 일수 계산으로 가산됩니다.</li>
+        </ul>
+      </div>
+
       {bill ? (
         <>
           <div ref={billRef} className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
@@ -146,16 +156,6 @@ export default function MyBillView({ user, settings }) {
           >
             <Download className="w-4 h-4" /> {downloading ? 'PDF 생성 중...' : '청구서 PDF 다운로드'}
           </button>
-
-          {/* 유의사항 */}
-          <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 leading-relaxed">
-            <p className="font-semibold mb-1">유의사항</p>
-            <ul className="list-disc pl-4 space-y-0.5">
-              <li>청구서 보관이 필요한 경우 PDF 다운로드하여 직접 보관하시기 바랍니다.</li>
-              <li>관리사무소에서는 별도의 청구서 사본을 제공하지 않습니다.</li>
-              <li>납부기한 경과 시 월 2%의 연체이자가 일수 계산으로 가산됩니다.</li>
-            </ul>
-          </div>
 
           <BankInfo settings={settings} />
         </>

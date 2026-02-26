@@ -96,6 +96,14 @@ export default function TenantDashboard({ user, settings }) {
         </div>
       )}
 
+      {/* Unpaid warning — 청구금액 위 */}
+      {bill && ITEMS.some(({ field, amountField }) => bill[amountField] > 0 && !bill[field]) && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+          <span className="text-sm text-red-700">미납 항목이 있습니다. 아래 계좌로 입금해주세요.</span>
+        </div>
+      )}
+
       {/* Current bill */}
       {bill ? (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
@@ -144,13 +152,6 @@ export default function TenantDashboard({ user, settings }) {
             })}
           </div>
 
-          {/* Unpaid warning */}
-          {ITEMS.some(({ field, amountField }) => bill[amountField] > 0 && !bill[field]) && (
-            <div className="mt-3 p-3 bg-red-50 rounded-lg flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-500" />
-              <span className="text-sm text-red-700">미납 항목이 있습니다. 아래 계좌로 입금해주세요.</span>
-            </div>
-          )}
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center mb-4">
