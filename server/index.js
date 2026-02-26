@@ -690,73 +690,114 @@ const pool = new Pool({
   });
 
   // ─── Tax Invoices API ─────────────────────────────────────
+  // List: join monthly_bills + tax_invoices for status
   app.get("/tax-invoices", async (req, res) => {
     const { year, month } = req.query;
     try {
-      let query = "SELECT ti.*, t.floor, t.company_name, t.business_number, t.representative FROM tax_invoices ti JOIN tenants t ON ti.tenant_id = t.id WHERE 1=1";
+      let query = `
+        SELECT mb.id as bill_id, mb.tenant_id, mb.year, mb.month,
+               mb.rent_amount, mb.maintenance_fee, mb.gas_amount, mb.electricity_amount, mb.water_amount,
+               t.floor, t.company_name, t.business_number, t.representative, t.address,
+               ti.id as tax_id, ti.is_issued, ti.issued_date, ti.memo as tax_memo
+        FROM monthly_bills mb
+        JOIN tenants t ON mb.tenant_id = t.id
+        LEFT JOIN tax_invoices ti ON ti.tenant_id = mb.tenant_id AND ti.year = mb.year AND ti.month = mb.month
+        WHERE 1=1`;
       const params = [];
       if (req.user.role === "tenant") {
-        query += ` AND ti.tenant_id = $${params.length + 1}`;
+        query += ` AND mb.tenant_id = $${params.length + 1}`;
         params.push(req.user.id);
       }
       if (year && month) {
-        query += ` AND ti.year = $${params.length + 1} AND ti.month = $${params.length + 2}`;
+        query += ` AND mb.year = $${params.length + 1} AND mb.month = $${params.length + 2}`;
         params.push(Number(year), Number(month));
       }
       query += " ORDER BY t.floor ASC";
       const { rows } = await pool.query(query, params);
-      res.json(rows);
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "서버 오류가 발생했습니다" });
-    }
-  });
 
-  // Generate tax invoices from monthly bills
-  app.post("/tax-invoices/generate", requireAdmin, async (req, res) => {
-    const { year, month } = req.body;
-    if (!year || !month) {
-      return res.status(400).json({ error: "연도와 월은 필수입니다" });
-    }
-    try {
-      const { rows: bills } = await pool.query(
-        "SELECT * FROM monthly_bills WHERE year=$1 AND month=$2",
-        [year, month]
-      );
-      if (bills.length === 0) {
-        return res.status(400).json({ error: "해당 월 청구서가 없습니다. 먼저 청구서를 생성하세요." });
-      }
-      let created = 0;
-      for (const bill of bills) {
-        const totalAmount = bill.rent_amount + bill.maintenance_fee;
+      // Compute supply/tax per item
+      const result = rows.map((r) => {
+        const items = [];
+        if (r.rent_amount > 0) items.push({ name: "임대료", amount: r.rent_amount });
+        if (r.maintenance_fee > 0) items.push({ name: "관리비", amount: r.maintenance_fee });
+        if (r.gas_amount > 0) items.push({ name: "가스", amount: r.gas_amount });
+        if (r.electricity_amount > 0) items.push({ name: "전기", amount: r.electricity_amount });
+        if (r.water_amount > 0) items.push({ name: "수도", amount: r.water_amount });
+        const totalAmount = items.reduce((s, i) => s + i.amount, 0);
         const supplyAmount = Math.round(totalAmount / 1.1);
         const taxAmount = totalAmount - supplyAmount;
-        await pool.query(
-          `INSERT INTO tax_invoices (tenant_id, year, month, supply_amount, tax_amount, total_amount)
-           VALUES ($1,$2,$3,$4,$5,$6)
-           ON CONFLICT (tenant_id, year, month) DO UPDATE SET supply_amount=$4, tax_amount=$5, total_amount=$6`,
-          [bill.tenant_id, year, month, supplyAmount, taxAmount, totalAmount]
-        );
-        created++;
-      }
-      res.json({ created, message: `${created}건 세금계산서 생성 완료` });
+        return {
+          bill_id: r.bill_id,
+          tenant_id: r.tenant_id,
+          year: r.year,
+          month: r.month,
+          floor: r.floor,
+          company_name: r.company_name,
+          business_number: r.business_number || "",
+          representative: r.representative || "",
+          address: r.address || "",
+          items,
+          total_amount: totalAmount,
+          supply_amount: supplyAmount,
+          tax_amount: taxAmount,
+          tax_id: r.tax_id,
+          is_issued: r.is_issued || false,
+          issued_date: r.issued_date,
+          tax_memo: r.tax_memo,
+        };
+      });
+      res.json(result);
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });
     }
   });
 
-  app.patch("/tax-invoices/:id/issue", requireAdmin, async (req, res) => {
+  // Toggle issue status (발행대기 ↔ 발행완료)
+  app.patch("/tax-invoices/:billId/issue", requireAdmin, async (req, res) => {
+    const { billId } = req.params;
     try {
+      // Get bill info
+      const { rows: bills } = await pool.query("SELECT tenant_id, year, month FROM monthly_bills WHERE id = $1", [billId]);
+      if (bills.length === 0) return res.status(404).json({ error: "청구서를 찾을 수 없습니다" });
+      const { tenant_id, year, month } = bills[0];
       const today = new Date().toISOString().split("T")[0];
-      const { rows } = await pool.query("SELECT is_issued FROM tax_invoices WHERE id = $1", [req.params.id]);
-      if (rows.length === 0) return res.status(404).json({ error: "세금계산서를 찾을 수 없습니다" });
-      const newVal = !rows[0].is_issued;
+
+      // Check if tax_invoices record exists
+      const { rows: existing } = await pool.query(
+        "SELECT id, is_issued FROM tax_invoices WHERE tenant_id=$1 AND year=$2 AND month=$3",
+        [tenant_id, year, month]
+      );
+
+      if (existing.length === 0) {
+        // Create as issued
+        await pool.query(
+          `INSERT INTO tax_invoices (tenant_id, year, month, supply_amount, tax_amount, total_amount, is_issued, issued_date)
+           VALUES ($1,$2,$3,0,0,0,TRUE,$4)`,
+          [tenant_id, year, month, today]
+        );
+        return res.json({ success: true, is_issued: true });
+      }
+
+      const newVal = !existing[0].is_issued;
       await pool.query(
         "UPDATE tax_invoices SET is_issued = $1, issued_date = $2 WHERE id = $3",
-        [newVal, newVal ? today : null, req.params.id]
+        [newVal, newVal ? today : null, existing[0].id]
       );
       res.json({ success: true, is_issued: newVal });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  // Download settings (for tax invoice CSV: landlord info)
+  app.get("/tax-invoices/download-info", requireAdmin, async (req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT * FROM settings");
+      const settings = {};
+      rows.forEach((r) => (settings[r.key] = r.value));
+      res.json(settings);
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });
