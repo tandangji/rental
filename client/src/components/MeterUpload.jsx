@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Camera, Check, Upload, Flame, Zap, Droplets } from 'lucide-react';
+import { compressImage } from '../utils/imageCompress';
+import { Camera, Check, Upload, Flame, Zap, Droplets, AlertTriangle } from 'lucide-react';
 
 const UTILITY_TYPES = [
   { key: 'gas', label: '가스', icon: Flame, color: 'text-orange-500', bg: 'bg-orange-50' },
@@ -33,31 +34,28 @@ export default function MeterUpload({ user }) {
     setUploading(utilityType);
     setMessage('');
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = reader.result;
-        const res = await authFetch(`${API_BASE}/meter-readings`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            year, month,
-            utility_type: utilityType,
-            photo_base64: base64,
-            photo_filename: file.name,
-          }),
-        });
-        if (res.ok) {
-          setMessage(`${UTILITY_TYPES.find(u => u.key === utilityType).label} 사진 업로드 완료`);
-          loadReadings();
-        } else {
-          const data = await res.json();
-          setMessage(data.error || '업로드 실패');
-        }
-        setUploading(null);
-      };
-      reader.readAsDataURL(file);
+      // 이미지 압축 (1280px, JPEG 70%) — 5~10MB → 200~400KB
+      const base64 = await compressImage(file);
+      const res = await authFetch(`${API_BASE}/meter-readings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          year, month,
+          utility_type: utilityType,
+          photo_base64: base64,
+          photo_filename: file.name,
+        }),
+      });
+      if (res.ok) {
+        setMessage(`${UTILITY_TYPES.find(u => u.key === utilityType).label} 사진 업로드 완료`);
+        loadReadings();
+      } else {
+        const data = await res.json();
+        setMessage(data.error || '업로드 실패');
+      }
     } catch {
       setMessage('업로드 실패');
+    } finally {
       setUploading(null);
     }
   };
@@ -77,6 +75,15 @@ export default function MeterUpload({ user }) {
             <option key={m} value={m}>{m}월</option>
           ))}
         </select>
+      </div>
+
+      {/* 검침 안내 */}
+      <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="text-xs text-amber-800">
+          <p className="font-semibold">매월 22일까지 검침 사진을 업로드해주세요.</p>
+          <p className="mt-0.5">미제출 시 전월 사용량의 1.5배로 임시 부과됩니다.</p>
+        </div>
       </div>
 
       {message && (

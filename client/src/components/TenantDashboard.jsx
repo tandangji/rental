@@ -102,6 +102,15 @@ export default function TenantDashboard({ user, settings }) {
 
       {/* Bank info */}
       <BankInfo settings={settings} />
+
+      {/* 유의사항 */}
+      <div className="mt-4 p-3 rounded-lg bg-gray-50 border border-gray-200">
+        <p className="text-xs font-semibold text-gray-700 mb-1">유의사항</p>
+        <ul className="text-xs text-gray-600 space-y-0.5 list-disc list-inside">
+          <li>매월 22일까지 계량기 검침 사진을 업로드해주세요. 미제출 시 전월 사용량의 1.5배로 임시 부과됩니다.</li>
+          <li>납부기한 경과 시에는 월 2%의 연체이자가 일수 계산으로 가산됩니다.</li>
+        </ul>
+      </div>
     </div>
   );
 }
