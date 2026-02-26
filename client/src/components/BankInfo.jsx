@@ -1,14 +1,29 @@
-import React from 'react';
-import { CreditCard, Copy } from 'lucide-react';
+import React, { useState } from 'react';
+import { CreditCard, Copy, Check } from 'lucide-react';
 
 export default function BankInfo({ settings }) {
   const { bank_name, bank_account, bank_holder } = settings;
+  const [copied, setCopied] = useState(false);
+
   if (!bank_name && !bank_account) return null;
 
-  const handleCopy = () => {
-    if (bank_account) {
-      navigator.clipboard.writeText(bank_account).catch(() => {});
-    }
+  const handleCopy = async () => {
+    if (!bank_account) return;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(bank_account);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = bank_account;
+        ta.style.cssText = 'position:fixed;left:-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
   };
 
   return (
@@ -22,8 +37,15 @@ export default function BankInfo({ settings }) {
         {bank_account && (
           <div className="flex items-center gap-2">
             <p className="text-blue-900 font-bold text-lg">{bank_account}</p>
-            <button onClick={handleCopy} className="p-1 text-blue-500 hover:text-blue-700">
-              <Copy className="w-4 h-4" />
+            <button
+              onClick={handleCopy}
+              className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium min-h-[32px] ${
+                copied
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200 active:bg-blue-300'
+              }`}
+            >
+              {copied ? <><Check className="w-3 h-3" /> 복사됨</> : <><Copy className="w-3 h-3" /> 복사</>}
             </button>
           </div>
         )}

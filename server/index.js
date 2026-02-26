@@ -499,6 +499,20 @@ const pool = new Pool({
 
   // photo endpoint는 auth 미들웨어 위에 정의됨 (query token 지원)
 
+  // 사진 삭제 (건물주 전용)
+  app.delete("/meter-readings/:id/photo", requireAdmin, async (req, res) => {
+    try {
+      await pool.query(
+        "UPDATE meter_readings SET photo = NULL, photo_filename = NULL, uploaded_at = NULL WHERE id = $1",
+        [req.params.id]
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
   // ─── Building Bills API ───────────────────────────────────
   app.get("/building-bills", async (req, res) => {
     const { year, month } = req.query;

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BankInfo from './BankInfo';
+import { Download } from 'lucide-react';
 
 const ITEMS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount', dateField: 'rent_paid_date' },
@@ -18,6 +19,8 @@ export default function MyBillView({ user, settings }) {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [bills, setBills] = useState([]);
+  const [downloading, setDownloading] = useState(false);
+  const billRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -35,6 +38,34 @@ export default function MyBillView({ user, settings }) {
   const totalWithVat = bill
     ? ITEMS.reduce((s, { amountField }) => s + withVat(bill[amountField]), 0)
     : 0;
+
+  const handleDownloadPDF = async () => {
+    if (!bill || !billRef.current) return;
+    setDownloading(true);
+    try {
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ]);
+      const canvas = await html2canvas(billRef.current, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const imgW = canvas.width;
+      const imgH = canvas.height;
+      const pdfW = 210;
+      const pdfH = (imgH * pdfW) / imgW;
+      const pdf = new jsPDF('p', 'mm', [pdfW, Math.max(pdfH + 20, 297)]);
+      pdf.addImage(imgData, 'PNG', 0, 10, pdfW, pdfH);
+      pdf.save(`청구서_${year}년${month}월_${user.name}.pdf`);
+    } catch (err) {
+      console.error('PDF 생성 실패:', err);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div>
@@ -55,7 +86,7 @@ export default function MyBillView({ user, settings }) {
 
       {bill ? (
         <>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+          <div ref={billRef} className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
             <div className="text-center mb-4">
               <p className="text-sm text-gray-500">{year}년 {month}월 <span className="text-xs text-gray-400">(부가세 포함)</span></p>
               <p className="text-3xl font-bold text-gray-900 mt-1">
@@ -105,6 +136,25 @@ export default function MyBillView({ user, settings }) {
                 );
               })}
             </div>
+          </div>
+
+          {/* PDF 다운로드 버튼 */}
+          <button
+            onClick={handleDownloadPDF}
+            disabled={downloading}
+            className="w-full flex items-center justify-center gap-2 py-2.5 mb-3 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
+          >
+            <Download className="w-4 h-4" /> {downloading ? 'PDF 생성 중...' : '청구서 PDF 다운로드'}
+          </button>
+
+          {/* 유의사항 */}
+          <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 leading-relaxed">
+            <p className="font-semibold mb-1">유의사항</p>
+            <ul className="list-disc pl-4 space-y-0.5">
+              <li>청구서 보관이 필요한 경우 PDF 다운로드하여 직접 보관하시기 바랍니다.</li>
+              <li>관리사무소에서는 별도의 청구서 사본을 제공하지 않습니다.</li>
+              <li>납부기한 경과 시 월 2%의 연체이자가 일수 계산으로 가산됩니다.</li>
+            </ul>
           </div>
 
           <BankInfo settings={settings} />

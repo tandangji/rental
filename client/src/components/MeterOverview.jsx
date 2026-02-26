@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch, getToken } from '../utils/api';
-import { Flame, Zap, Droplets, Camera, Check, X, Eye, MessageSquare } from 'lucide-react';
+import { Flame, Zap, Droplets, Camera, Check, X, Eye, MessageSquare, Trash2 } from 'lucide-react';
 
 const UTILITY_TYPES = [
   { key: 'gas', label: '가스', unit: 'm³', icon: Flame, color: 'text-orange-500' },
@@ -60,6 +60,14 @@ export default function MeterOverview() {
         }),
       });
       setEditingId(null);
+      load();
+    } catch {}
+  };
+
+  const handleDeletePhoto = async (readingId) => {
+    if (!confirm('이 사진을 삭제하시겠습니까?')) return;
+    try {
+      await authFetch(`${API_BASE}/meter-readings/${readingId}/photo`, { method: 'DELETE' });
       load();
     } catch {}
   };
@@ -143,14 +151,22 @@ export default function MeterOverview() {
                     {/* 사진 썸네일 / 상태 */}
                     <div className="mb-2">
                       {hasPhoto ? (
-                        <button onClick={() => setPhotoModal(reading.id)} className="w-full">
-                          <img
-                            src={`${API_BASE}/meter-readings/${reading.id}/photo?token=${getToken()}`}
-                            alt={`${label} 계량기`}
-                            className="w-full h-16 object-cover rounded bg-gray-100"
-                            loading="lazy"
-                          />
-                        </button>
+                        <div className="relative">
+                          <button onClick={() => setPhotoModal(reading.id)} className="w-full">
+                            <img
+                              src={`${API_BASE}/meter-readings/${reading.id}/photo?token=${getToken()}`}
+                              alt={`${label} 계량기`}
+                              className="w-full h-16 object-cover rounded bg-gray-100"
+                              loading="lazy"
+                            />
+                          </button>
+                          <button
+                            onClick={() => handleDeletePhoto(reading.id)}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
                       ) : (
                         <div className="w-full h-16 rounded bg-gray-100 flex items-center justify-center">
                           <span className="text-xs text-gray-400 flex items-center gap-0.5">
