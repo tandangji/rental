@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { API_BASE, authFetch } from '../utils/api';
+import { API_BASE, authFetch, getToken } from '../utils/api';
 import { Flame, Zap, Droplets, Camera, Check, X, Eye, MessageSquare } from 'lucide-react';
 
 const UTILITY_TYPES = [
-  { key: 'gas', label: '가스', icon: Flame, color: 'text-orange-500' },
-  { key: 'electricity', label: '전기', icon: Zap, color: 'text-yellow-500' },
-  { key: 'water', label: '수도', icon: Droplets, color: 'text-blue-500' },
+  { key: 'gas', label: '가스', unit: 'm³', icon: Flame, color: 'text-orange-500' },
+  { key: 'electricity', label: '전기', unit: 'kWh', icon: Zap, color: 'text-yellow-500' },
+  { key: 'water', label: '수도', unit: 'm³', icon: Droplets, color: 'text-blue-500' },
 ];
 
 export default function MeterOverview() {
@@ -47,6 +47,23 @@ export default function MeterOverview() {
     } catch {}
   };
 
+  const handleCreateAndSave = async (tenantId, utilityType, value) => {
+    try {
+      await authFetch(`${API_BASE}/meter-readings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenant_id: tenantId,
+          year, month,
+          utility_type: utilityType,
+          reading_value: value ? Number(value) : null,
+        }),
+      });
+      setEditingId(null);
+      load();
+    } catch {}
+  };
+
   const handleSendReminder = async () => {
     try {
       const res = await authFetch(`${API_BASE}/sms/remind-meter`, {
@@ -81,6 +98,10 @@ export default function MeterOverview() {
         </div>
       </div>
 
+      <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-700 text-xs">
+        사진을 확인하고 각 층별 사용량을 입력하세요. 사용량 기준으로 공과금이 배분됩니다.
+      </div>
+
       {smsResult && (
         <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-700 text-sm">
           {smsResult.message}
@@ -106,65 +127,85 @@ export default function MeterOverview() {
               <span className="font-semibold text-gray-900 text-sm">{tenant.company_name}</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {UTILITY_TYPES.map(({ key, label, icon: Icon, color }) => {
+            <div className="space-y-2">
+              {UTILITY_TYPES.map(({ key, label, unit, icon: Icon, color }) => {
                 const reading = getReading(tenant.id, key);
                 const hasPhoto = !!reading?.uploaded_at;
                 const hasValue = reading?.reading_value != null;
+                const editKey = `${tenant.id}-${key}`;
+                const isEditing = editingId === editKey;
 
                 return (
-                  <div key={key} className={`rounded-lg p-3 text-center ${hasPhoto ? 'bg-green-50' : 'bg-gray-50'}`}>
-                    <Icon className={`w-4 h-4 mx-auto mb-1 ${color}`} />
-                    <p className="text-xs text-gray-500 mb-1">{label}</p>
-
-                    {/* Photo status */}
-                    <div className="mb-1">
-                      {hasPhoto ? (
-                        <button
-                          onClick={() => setPhotoModal(reading.id)}
-                          className="text-xs text-green-600 flex items-center justify-center gap-0.5"
-                        >
-                          <Check className="w-3 h-3" /> <Eye className="w-3 h-3" />
-                        </button>
-                      ) : (
-                        <span className="text-xs text-gray-400 flex items-center justify-center gap-0.5">
-                          <X className="w-3 h-3" /> 미업로드
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Reading value */}
-                    {reading && editingId === reading.id ? (
-                      <div className="flex gap-1">
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          className="w-full px-1 py-1 border border-gray-300 rounded text-xs text-center"
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveReading(reading.id);
-                            if (e.key === 'Escape') setEditingId(null);
-                          }}
-                        />
-                        <button onClick={() => handleSaveReading(reading.id)} className="text-green-600 text-xs">
-                          <Check className="w-3 h-3" />
-                        </button>
+                  <div key={key} className={`rounded-lg p-3 ${hasPhoto ? 'bg-green-50' : 'bg-gray-50'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Icon className={`w-4 h-4 ${color}`} />
+                        <span className="text-sm font-medium text-gray-700">{label}</span>
+                        {hasPhoto ? (
+                          <button
+                            onClick={() => setPhotoModal(reading.id)}
+                            className="text-xs text-green-600 flex items-center gap-0.5 bg-green-100 px-1.5 py-0.5 rounded"
+                          >
+                            <Eye className="w-3 h-3" /> 사진
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-400 flex items-center gap-0.5">
+                            <Camera className="w-3 h-3" /> 미업로드
+                          </span>
+                        )}
                       </div>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          if (!reading) return;
-                          setEditingId(reading.id);
-                          setEditValue(reading.reading_value ?? '');
-                        }}
-                        className={`text-xs font-mono ${hasValue ? 'text-gray-900' : 'text-gray-400'} hover:text-blue-600`}
-                        disabled={!reading}
-                      >
-                        {hasValue ? Number(reading.reading_value).toLocaleString() : '입력'}
-                      </button>
-                    )}
+
+                      {/* 사용량 입력 */}
+                      <div className="flex items-center gap-1">
+                        {isEditing ? (
+                          <>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-24 px-2 py-1.5 border border-gray-300 rounded-lg text-sm text-right"
+                              autoFocus
+                              placeholder="사용량"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  if (reading) handleSaveReading(reading.id);
+                                  else handleCreateAndSave(tenant.id, key, editValue);
+                                }
+                                if (e.key === 'Escape') setEditingId(null);
+                              }}
+                            />
+                            <span className="text-xs text-gray-400">{unit}</span>
+                            <button
+                              onClick={() => {
+                                if (reading) handleSaveReading(reading.id);
+                                else handleCreateAndSave(tenant.id, key, editValue);
+                              }}
+                              className="p-1 text-green-600 hover:bg-green-100 rounded"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setEditingId(null)} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingId(editKey);
+                              setEditValue(reading?.reading_value ?? '');
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-sm min-h-[36px] ${
+                              hasValue
+                                ? 'bg-white border border-gray-200 text-gray-900 font-medium hover:border-blue-400'
+                                : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                            }`}
+                          >
+                            {hasValue ? `${Number(reading.reading_value).toLocaleString()} ${unit}` : '사용량 입력'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
@@ -182,7 +223,7 @@ export default function MeterOverview() {
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setPhotoModal(null)}>
           <div className="max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
             <img
-              src={`${API_BASE}/meter-readings/${photoModal}/photo`}
+              src={`${API_BASE}/meter-readings/${photoModal}/photo?token=${getToken()}`}
               alt="계량기 사진"
               className="w-full rounded-xl"
             />

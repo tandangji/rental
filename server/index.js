@@ -170,23 +170,29 @@ const pool = new Pool({
     );
   }
 
-  // tax_invoices
+  // tax_invoices (항목별 개별 발행: item_type = rent/maintenance/gas/electricity/water)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tax_invoices (
       id SERIAL PRIMARY KEY,
       tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
       year INTEGER NOT NULL,
       month INTEGER NOT NULL,
+      item_type TEXT NOT NULL DEFAULT 'rent',
       supply_amount INTEGER NOT NULL,
       tax_amount INTEGER NOT NULL,
       total_amount INTEGER NOT NULL,
       issued_date DATE,
       is_issued BOOLEAN DEFAULT FALSE,
       memo TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(tenant_id, year, month)
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  // Migration: 기존 테이블에 item_type 컬럼 추가
+  try { await pool.query("ALTER TABLE tax_invoices ADD COLUMN IF NOT EXISTS item_type TEXT NOT NULL DEFAULT 'rent'"); } catch {}
+  // 기존 UNIQUE(tenant_id, year, month) 제약조건 제거
+  try { await pool.query("ALTER TABLE tax_invoices DROP CONSTRAINT IF EXISTS tax_invoices_tenant_id_year_month_key"); } catch {}
+  // 새 UNIQUE INDEX 생성
+  try { await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_tax_inv_unique ON tax_invoices (tenant_id, year, month, item_type)"); } catch {}
 
   console.log("테이블 초기화 완료");
 
@@ -244,6 +250,37 @@ const pool = new Pool({
       sessions.delete(auth.slice(7));
     }
     res.json({ success: true });
+  });
+
+  // ─── Photo endpoint (auth 미들웨어 앞: img src에서 query token 사용) ──
+  app.get("/meter-readings/:id/photo", (req, res, next) => {
+    // header 또는 query token 인증
+    const auth = req.headers.authorization;
+    const token = auth?.startsWith("Bearer ") ? auth.slice(7) : req.query.token;
+    if (!token) return res.status(401).json({ error: "인증이 필요합니다" });
+    const user = sessions.get(token);
+    if (!user) return res.status(401).json({ error: "세션이 만료되었습니다" });
+    req.user = user;
+    next();
+  }, async (req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT photo, photo_filename, tenant_id FROM meter_readings WHERE id = $1", [req.params.id]);
+      if (rows.length === 0 || !rows[0].photo) {
+        return res.status(404).json({ error: "사진이 없습니다" });
+      }
+      if (req.user.role === "tenant" && rows[0].tenant_id !== req.user.id) {
+        return res.status(403).json({ error: "권한이 없습니다" });
+      }
+      const buf = rows[0].photo;
+      const filename = rows[0].photo_filename || "photo.jpg";
+      const ext = filename.split(".").pop().toLowerCase();
+      const mimeMap = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
+      res.set("Content-Type", mimeMap[ext] || "image/jpeg");
+      res.send(buf);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
   });
 
   // ─── Auth Middleware ──────────────────────────────────────
@@ -460,27 +497,7 @@ const pool = new Pool({
     }
   });
 
-  app.get("/meter-readings/:id/photo", async (req, res) => {
-    try {
-      const { rows } = await pool.query("SELECT photo, photo_filename, tenant_id FROM meter_readings WHERE id = $1", [req.params.id]);
-      if (rows.length === 0 || !rows[0].photo) {
-        return res.status(404).json({ error: "사진이 없습니다" });
-      }
-      // Tenant can only view own photos
-      if (req.user.role === "tenant" && rows[0].tenant_id !== req.user.id) {
-        return res.status(403).json({ error: "권한이 없습니다" });
-      }
-      const buf = rows[0].photo;
-      const filename = rows[0].photo_filename || "photo.jpg";
-      const ext = filename.split(".").pop().toLowerCase();
-      const mimeMap = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp" };
-      res.set("Content-Type", mimeMap[ext] || "image/jpeg");
-      res.send(buf);
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "서버 오류가 발생했습니다" });
-    }
-  });
+  // photo endpoint는 auth 미들웨어 위에 정의됨 (query token 지원)
 
   // ─── Building Bills API ───────────────────────────────────
   app.get("/building-bills", async (req, res) => {
@@ -561,12 +578,7 @@ const pool = new Pool({
       const { rows: bbRows } = await pool.query("SELECT * FROM building_bills WHERE year=$1 AND month=$2", [year, month]);
       const buildingBill = bbRows[0] || { gas_total: 0, electricity_total: 0, water_total: 0 };
 
-      // Get previous month for usage calculation
-      let prevYear = year;
-      let prevMonth = month - 1;
-      if (prevMonth === 0) { prevYear -= 1; prevMonth = 12; }
-
-      // Distribute utility costs
+      // Distribute utility costs — reading_value를 해당 월 사용량으로 직접 사용
       const utilityTypes = ["gas", "electricity", "water"];
       const totalFields = { gas: "gas_total", electricity: "electricity_total", water: "water_total" };
       const amountFields = { gas: "gas_amount", electricity: "electricity_amount", water: "water_amount" };
@@ -580,41 +592,25 @@ const pool = new Pool({
         const totalCost = buildingBill[totalFields[utype]] || 0;
         if (totalCost === 0) continue;
 
-        // Get current month readings
-        const { rows: currentReadings } = await pool.query(
+        // 해당 월 사용량 조회
+        const { rows: readings } = await pool.query(
           "SELECT tenant_id, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
           [year, month, utype]
         );
-        // Get previous month readings
-        const { rows: prevReadings } = await pool.query(
-          "SELECT tenant_id, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
-          [prevYear, prevMonth, utype]
-        );
 
-        const currentMap = {};
-        currentReadings.forEach((r) => { currentMap[r.tenant_id] = parseFloat(r.reading_value) || 0; });
-        const prevMap = {};
-        prevReadings.forEach((r) => { prevMap[r.tenant_id] = parseFloat(r.reading_value) || 0; });
-
-        // Calculate usage per tenant
         const usages = [];
         let totalUsage = 0;
         for (const t of tenants) {
-          const current = currentMap[t.id];
-          const prev = prevMap[t.id];
-          if (current != null && prev != null) {
-            const usage = Math.max(0, current - prev);
-            usages.push({ tenantId: t.id, usage });
-            totalUsage += usage;
-          } else {
-            usages.push({ tenantId: t.id, usage: null }); // no reading
-          }
+          const reading = readings.find((r) => r.tenant_id === t.id);
+          const usage = reading?.reading_value != null ? parseFloat(reading.reading_value) : null;
+          usages.push({ tenantId: t.id, usage });
+          if (usage != null) totalUsage += usage;
         }
 
         // Distribute
-        const validUsages = usages.filter((u) => u.usage !== null);
+        const validUsages = usages.filter((u) => u.usage !== null && u.usage > 0);
         if (validUsages.length === 0) {
-          // No readings: equal split among all tenants
+          // 사용량 미입력: 균등 배분
           const share = Math.round(totalCost / tenants.length);
           let allocated = 0;
           tenants.forEach((t, idx) => {
@@ -625,20 +621,8 @@ const pool = new Pool({
               allocated += share;
             }
           });
-        } else if (totalUsage === 0) {
-          // All zero usage: equal split among tenants with readings
-          const share = Math.round(totalCost / validUsages.length);
-          let allocated = 0;
-          validUsages.forEach((u, idx) => {
-            if (idx === validUsages.length - 1) {
-              distribution[u.tenantId][amountFields[utype]] = totalCost - allocated;
-            } else {
-              distribution[u.tenantId][amountFields[utype]] = share;
-              allocated += share;
-            }
-          });
         } else {
-          // Proportional distribution
+          // 사용량 비례 배분
           let allocated = 0;
           validUsages.forEach((u, idx) => {
             if (idx === validUsages.length - 1) {
@@ -697,63 +681,81 @@ const pool = new Pool({
     }
   });
 
-  // ─── Tax Invoices API ─────────────────────────────────────
-  // List: join monthly_bills + tax_invoices for status
+  // ─── Tax Invoices API (항목별 개별 발행) ─────────────────
+  const ITEM_TYPES = [
+    { type: "rent", name: "임대료", amountField: "rent_amount" },
+    { type: "maintenance", name: "관리비", amountField: "maintenance_fee" },
+    { type: "gas", name: "가스", amountField: "gas_amount" },
+    { type: "electricity", name: "전기", amountField: "electricity_amount" },
+    { type: "water", name: "수도", amountField: "water_amount" },
+  ];
+
   app.get("/tax-invoices", async (req, res) => {
     const { year, month } = req.query;
     try {
-      let query = `
+      // 1) 월별 청구서 조회
+      let billQuery = `
         SELECT mb.id as bill_id, mb.tenant_id, mb.year, mb.month,
                mb.rent_amount, mb.maintenance_fee, mb.gas_amount, mb.electricity_amount, mb.water_amount,
-               t.floor, t.company_name, t.business_number, t.representative, t.address,
-               ti.id as tax_id, ti.is_issued, ti.issued_date, ti.memo as tax_memo
+               t.floor, t.company_name, t.business_number, t.representative, t.address
         FROM monthly_bills mb
-        JOIN tenants t ON mb.tenant_id = t.id
-        LEFT JOIN tax_invoices ti ON ti.tenant_id = mb.tenant_id AND ti.year = mb.year AND ti.month = mb.month
-        WHERE 1=1`;
+        JOIN tenants t ON mb.tenant_id = t.id WHERE 1=1`;
       const params = [];
       if (req.user.role === "tenant") {
-        query += ` AND mb.tenant_id = $${params.length + 1}`;
+        billQuery += ` AND mb.tenant_id = $${params.length + 1}`;
         params.push(req.user.id);
       }
       if (year && month) {
-        query += ` AND mb.year = $${params.length + 1} AND mb.month = $${params.length + 2}`;
+        billQuery += ` AND mb.year = $${params.length + 1} AND mb.month = $${params.length + 2}`;
         params.push(Number(year), Number(month));
       }
-      query += " ORDER BY t.floor ASC";
-      const { rows } = await pool.query(query, params);
+      billQuery += " ORDER BY t.floor ASC";
+      const { rows: bills } = await pool.query(billQuery, params);
 
-      // Compute supply/tax per item
-      const result = rows.map((r) => {
-        const items = [];
-        if (r.rent_amount > 0) items.push({ name: "임대료", amount: r.rent_amount });
-        if (r.maintenance_fee > 0) items.push({ name: "관리비", amount: r.maintenance_fee });
-        if (r.gas_amount > 0) items.push({ name: "가스", amount: r.gas_amount });
-        if (r.electricity_amount > 0) items.push({ name: "전기", amount: r.electricity_amount });
-        if (r.water_amount > 0) items.push({ name: "수도", amount: r.water_amount });
-        const supplyAmount = items.reduce((s, i) => s + i.amount, 0);
-        const taxAmount = Math.round(supplyAmount * 0.1);
-        const totalAmount = supplyAmount + taxAmount;
-        return {
-          bill_id: r.bill_id,
-          tenant_id: r.tenant_id,
-          year: r.year,
-          month: r.month,
-          floor: r.floor,
-          company_name: r.company_name,
-          business_number: r.business_number || "",
-          representative: r.representative || "",
-          address: r.address || "",
-          items,
-          total_amount: totalAmount,
-          supply_amount: supplyAmount,
-          tax_amount: taxAmount,
-          tax_id: r.tax_id,
-          is_issued: r.is_issued || false,
-          issued_date: r.issued_date,
-          tax_memo: r.tax_memo,
-        };
-      });
+      // 2) 세금계산서 발행 이력 조회
+      let taxQuery = "SELECT * FROM tax_invoices WHERE 1=1";
+      const taxParams = [];
+      if (req.user.role === "tenant") {
+        taxQuery += ` AND tenant_id = $${taxParams.length + 1}`;
+        taxParams.push(req.user.id);
+      }
+      if (year && month) {
+        taxQuery += ` AND year = $${taxParams.length + 1} AND month = $${taxParams.length + 2}`;
+        taxParams.push(Number(year), Number(month));
+      }
+      const { rows: taxRecords } = await pool.query(taxQuery, taxParams);
+
+      // 3) 항목별 개별 세금계산서 생성
+      const result = [];
+      for (const bill of bills) {
+        for (const { type, name, amountField } of ITEM_TYPES) {
+          const amount = bill[amountField] || 0;
+          if (amount <= 0) continue;
+          const taxRecord = taxRecords.find((t) =>
+            t.tenant_id === bill.tenant_id && t.year === bill.year && t.month === bill.month && t.item_type === type
+          );
+          const taxAmount = Math.round(amount * 0.1);
+          result.push({
+            bill_id: bill.bill_id,
+            tenant_id: bill.tenant_id,
+            year: bill.year,
+            month: bill.month,
+            floor: bill.floor,
+            company_name: bill.company_name,
+            business_number: bill.business_number || "",
+            representative: bill.representative || "",
+            address: bill.address || "",
+            item_type: type,
+            item_name: name,
+            supply_amount: amount,
+            tax_amount: taxAmount,
+            total_amount: amount + taxAmount,
+            tax_id: taxRecord?.id,
+            is_issued: taxRecord?.is_issued || false,
+            issued_date: taxRecord?.issued_date,
+          });
+        }
+      }
       res.json(result);
     } catch (err) {
       console.error(err);
@@ -761,28 +763,27 @@ const pool = new Pool({
     }
   });
 
-  // Toggle issue status (발행대기 ↔ 발행완료)
+  // Toggle issue status per item (발행대기 ↔ 발행완료)
   app.patch("/tax-invoices/:billId/issue", requireAdmin, async (req, res) => {
     const { billId } = req.params;
+    const { item_type } = req.body;
+    if (!item_type) return res.status(400).json({ error: "item_type 필수" });
     try {
-      // Get bill info
       const { rows: bills } = await pool.query("SELECT tenant_id, year, month FROM monthly_bills WHERE id = $1", [billId]);
       if (bills.length === 0) return res.status(404).json({ error: "청구서를 찾을 수 없습니다" });
       const { tenant_id, year, month } = bills[0];
       const today = new Date().toISOString().split("T")[0];
 
-      // Check if tax_invoices record exists
       const { rows: existing } = await pool.query(
-        "SELECT id, is_issued FROM tax_invoices WHERE tenant_id=$1 AND year=$2 AND month=$3",
-        [tenant_id, year, month]
+        "SELECT id, is_issued FROM tax_invoices WHERE tenant_id=$1 AND year=$2 AND month=$3 AND item_type=$4",
+        [tenant_id, year, month, item_type]
       );
 
       if (existing.length === 0) {
-        // Create as issued
         await pool.query(
-          `INSERT INTO tax_invoices (tenant_id, year, month, supply_amount, tax_amount, total_amount, is_issued, issued_date)
-           VALUES ($1,$2,$3,0,0,0,TRUE,$4)`,
-          [tenant_id, year, month, today]
+          `INSERT INTO tax_invoices (tenant_id, year, month, item_type, supply_amount, tax_amount, total_amount, is_issued, issued_date)
+           VALUES ($1,$2,$3,$4,0,0,0,TRUE,$5)`,
+          [tenant_id, year, month, item_type, today]
         );
         return res.json({ success: true, is_issued: true });
       }

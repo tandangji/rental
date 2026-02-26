@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { API_BASE, authFetch } from '../utils/api';
+import { API_BASE, authFetch, getToken } from '../utils/api';
 import { compressImage } from '../utils/imageCompress';
 import { Camera, Check, Upload, Flame, Zap, Droplets, AlertTriangle } from 'lucide-react';
 
@@ -148,7 +148,7 @@ export default function MeterUpload({ user }) {
               {hasPhoto && reading.id && (
                 <div className="mt-3">
                   <img
-                    src={`${API_BASE}/meter-readings/${reading.id}/photo`}
+                    src={`${API_BASE}/meter-readings/${reading.id}/photo?token=${getToken()}`}
                     alt={`${label} 계량기`}
                     className="w-full max-h-48 object-contain rounded-lg bg-gray-100"
                     loading="lazy"

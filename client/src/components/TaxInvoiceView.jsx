@@ -7,7 +7,7 @@ export default function TaxInvoiceView() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [invoices, setInvoices] = useState([]);
-  const [tab, setTab] = useState('pending'); // 'pending' | 'issued'
+  const [tab, setTab] = useState('pending');
   const [settings, setSettings] = useState({});
 
   const load = useCallback(async () => {
@@ -23,9 +23,13 @@ export default function TaxInvoiceView() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleToggleIssue = async (billId) => {
+  const handleToggleIssue = async (billId, itemType) => {
     try {
-      const res = await authFetch(`${API_BASE}/tax-invoices/${billId}/issue`, { method: 'PATCH' });
+      const res = await authFetch(`${API_BASE}/tax-invoices/${billId}/issue`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_type: itemType }),
+      });
       if (res.ok) load();
     } catch {}
   };
@@ -36,19 +40,15 @@ export default function TaxInvoiceView() {
   const issued = invoices.filter((i) => i.is_issued);
   const filtered = tab === 'pending' ? pending : issued;
 
-  // ─── Excel CSV Download (홈택스 일괄등록양식) ────────────
+  // ─── CSV Download (홈택스 일괄등록양식 — 항목별 1행) ────────
   const downloadCSV = () => {
     if (pending.length === 0) return;
 
-    // 홈택스 세금계산서 일괄등록양식(일반) 표준 컬럼
     const headers = [
       '세금계산서종류', '작성일자', '공급자등록번호', '공급받는자등록번호',
       '공급받는자상호', '공급받는자성명', '공급받는자주소',
       '공급가액합계', '세액합계', '비고',
       '품목일자1', '품목명1', '품목규격1', '품목수량1', '품목단가1', '품목공급가액1', '품목세액1', '품목비고1',
-      '품목일자2', '품목명2', '품목규격2', '품목수량2', '품목단가2', '품목공급가액2', '품목세액2', '품목비고2',
-      '품목일자3', '품목명3', '품목규격3', '품목수량3', '품목단가3', '품목공급가액3', '품목세액3', '품목비고3',
-      '품목일자4', '품목명4', '품목규격4', '품목수량4', '품목단가4', '품목공급가액4', '품목세액4', '품목비고4',
     ];
 
     const dateStr = `${year}${String(month).padStart(2, '0')}01`;
@@ -56,22 +56,8 @@ export default function TaxInvoiceView() {
 
     const rows = pending.map((inv) => {
       const buyerBizNo = (inv.business_number || '').replace(/-/g, '');
-
-      // Build item rows (max 4)
-      const itemCols = [];
-      inv.items.forEach((item, idx) => {
-        if (idx >= 4) return;
-        const itemSupply = item.amount;
-        const itemTax = Math.round(item.amount * 0.1);
-        itemCols.push(dateStr, item.name, '', '1', itemSupply, itemSupply, itemTax, '');
-      });
-      // Pad remaining item slots
-      for (let i = inv.items.length; i < 4; i++) {
-        itemCols.push('', '', '', '', '', '', '', '');
-      }
-
       return [
-        '01', // 01=일반
+        '01',
         dateStr,
         supplierBizNo,
         buyerBizNo,
@@ -80,12 +66,11 @@ export default function TaxInvoiceView() {
         inv.address,
         inv.supply_amount,
         inv.tax_amount,
-        `${year}년 ${month}월분`,
-        ...itemCols,
+        `${year}년 ${month}월 ${inv.item_name}`,
+        dateStr, inv.item_name, '', '1', inv.supply_amount, inv.supply_amount, inv.tax_amount, '',
       ];
     });
 
-    // BOM + CSV
     const csvContent = '\uFEFF' + [headers, ...rows]
       .map((row) => row.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
       .join('\r\n');
@@ -137,7 +122,7 @@ export default function TaxInvoiceView() {
         </button>
       </div>
 
-      {/* Download button (pending tab only) */}
+      {/* Download button */}
       {tab === 'pending' && pending.length > 0 && (
         <button
           onClick={downloadCSV}
@@ -167,10 +152,10 @@ export default function TaxInvoiceView() {
         </div>
       )}
 
-      {/* Invoice list */}
-      <div className="space-y-3">
+      {/* Invoice list — 항목별 개별 표시 */}
+      <div className="space-y-2">
         {filtered.map((inv) => (
-          <div key={inv.bill_id} className={`bg-white rounded-xl border-2 p-4 ${inv.is_issued ? 'border-green-200' : 'border-gray-200'}`}>
+          <div key={`${inv.bill_id}-${inv.item_type}`} className={`bg-white rounded-xl border-2 p-4 ${inv.is_issued ? 'border-green-200' : 'border-gray-200'}`}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
@@ -178,13 +163,14 @@ export default function TaxInvoiceView() {
                 </span>
                 <div>
                   <span className="font-semibold text-gray-900 text-sm">{inv.company_name}</span>
+                  <span className="ml-2 text-xs text-gray-500">{inv.item_name}</span>
                   {inv.business_number && (
                     <p className="text-xs text-gray-400">{inv.business_number}</p>
                   )}
                 </div>
               </div>
               <button
-                onClick={() => handleToggleIssue(inv.bill_id)}
+                onClick={() => handleToggleIssue(inv.bill_id, inv.item_type)}
                 className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg min-h-[36px] ${
                   inv.is_issued
                     ? 'bg-green-100 text-green-700 hover:bg-yellow-50 hover:text-yellow-700'
@@ -196,17 +182,7 @@ export default function TaxInvoiceView() {
               </button>
             </div>
 
-            {/* Item breakdown */}
-            <div className="space-y-1 mb-2">
-              {inv.items.map((item, idx) => (
-                <div key={idx} className="flex justify-between text-xs text-gray-600">
-                  <span>{item.name}</span>
-                  <span>{fmt(item.amount)}원</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 text-sm border-t border-gray-100 pt-2">
+            <div className="grid grid-cols-3 gap-2 text-sm">
               <div>
                 <p className="text-xs text-gray-400">공급가액</p>
                 <p className="font-medium">{fmt(inv.supply_amount)}원</p>
