@@ -59,6 +59,7 @@ export default function App() {
   }, [currentUser, loadSettings]);
 
   const handleLogin = (user) => {
+    localStorage.setItem('rental_session', JSON.stringify(user));
     setCurrentUser(user);
     setActiveTab(user.role === 'admin' ? 'dashboard' : 'home');
   };
