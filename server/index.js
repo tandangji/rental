@@ -845,7 +845,7 @@ const pool = new Pool({
 
   // ─── SPA Fallback ─────────────────────────────────────────
   const indexPath = path.join(clientBuildPath, "index.html");
-  app.get("*", (req, res) => {
+  app.get("/{*splat}", (req, res) => {
     res.sendFile(indexPath);
   });
 
