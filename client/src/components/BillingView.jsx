@@ -202,16 +202,8 @@ export default function BillingView() {
                 </div>
               </div>
 
-              {/* 항목 테이블: 항목명 | 공급가액 | 부가세 | 합계 */}
+              {/* 항목 리스트 */}
               <div className="border border-gray-100 rounded-lg overflow-hidden">
-                {/* 테이블 헤더 */}
-                <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-2 px-3 py-1.5 bg-gray-50 text-xs text-gray-400">
-                  <span>항목</span>
-                  <span className="w-20 text-right">공급가액</span>
-                  <span className="w-16 text-right">부가세</span>
-                  <span className="w-20 text-right">합계</span>
-                  <span className="w-16 text-center">상태</span>
-                </div>
                 {PAY_FIELDS.map(({ field, label, amountField }) => {
                   const amount = bill[amountField];
                   if (amount === 0) return null;
@@ -219,23 +211,22 @@ export default function BillingView() {
                   const v = vatOf(amount);
                   const t = amount + v;
                   return (
-                    <div key={field} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-2 items-center px-3 py-2 border-t border-gray-50 text-xs">
-                      <span className="text-sm text-gray-900">{label}</span>
-                      <span className="w-20 text-right text-gray-700">{fmt(amount)}</span>
-                      <span className="w-16 text-right text-gray-500">{fmt(v)}</span>
-                      <span className={`w-20 text-right font-medium ${isPaid ? 'text-green-600' : 'text-gray-900'}`}>{fmt(t)}</span>
-                      <span className="w-16 text-center">
-                        <button
-                          onClick={() => handleTogglePay(bill.id, field)}
-                          className={`px-2 py-1 text-xs font-medium rounded-full ${
-                            isPaid
-                              ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                              : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                          }`}
-                        >
-                          {isPaid ? '완료' : '대기'}
-                        </button>
-                      </span>
+                    <div key={field} className="flex items-center justify-between px-3 py-2.5 border-t border-gray-50 first:border-t-0">
+                      <span className="text-sm text-gray-900 min-w-[40px]">{label}</span>
+                      <div className="flex-1 text-right mr-3">
+                        <span className={`text-sm font-medium ${isPaid ? 'text-green-600' : 'text-gray-900'}`}>{fmt(t)}원</span>
+                        <p className="text-[11px] text-gray-400">{fmt(amount)} + {fmt(v)}</p>
+                      </div>
+                      <button
+                        onClick={() => handleTogglePay(bill.id, field)}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
+                          isPaid
+                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                            : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                        }`}
+                      >
+                        {isPaid ? '완료' : '대기'}
+                      </button>
                     </div>
                   );
                 })}

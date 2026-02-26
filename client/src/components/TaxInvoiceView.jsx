@@ -192,33 +192,25 @@ export default function TaxInvoiceView() {
                   </div>
                 </div>
 
-                {/* 항목 테이블: 항목명 | 공급가액 | 세액 | 합계 | 상태 */}
+                {/* 항목 리스트 */}
                 <div className="border border-gray-100 rounded-lg overflow-hidden">
-                  <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-2 px-3 py-1.5 bg-gray-50 text-xs text-gray-400">
-                    <span>항목</span>
-                    <span className="w-20 text-right">공급가액</span>
-                    <span className="w-16 text-right">세액</span>
-                    <span className="w-20 text-right">합계</span>
-                    <span className="w-16 text-center">상태</span>
-                  </div>
                   {group.items.map((inv) => (
-                    <div key={`${inv.bill_id}-${inv.item_type}`} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-2 items-center px-3 py-2 border-t border-gray-50 text-xs">
-                      <span className="text-sm text-gray-900">{inv.item_name}</span>
-                      <span className="w-20 text-right text-gray-700">{fmt(inv.supply_amount)}</span>
-                      <span className="w-16 text-right text-gray-500">{fmt(inv.tax_amount)}</span>
-                      <span className={`w-20 text-right font-medium ${inv.is_issued ? 'text-green-600' : 'text-gray-900'}`}>{fmt(inv.total_amount)}</span>
-                      <span className="w-16 text-center">
-                        <button
-                          onClick={() => handleToggleIssue(inv.bill_id, inv.item_type)}
-                          className={`px-2 py-1 text-xs font-medium rounded-full ${
-                            inv.is_issued
-                              ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                              : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                          }`}
-                        >
-                          {inv.is_issued ? '발행' : '대기'}
-                        </button>
-                      </span>
+                    <div key={`${inv.bill_id}-${inv.item_type}`} className="flex items-center justify-between px-3 py-2.5 border-t border-gray-50 first:border-t-0">
+                      <span className="text-sm text-gray-900 min-w-[40px]">{inv.item_name}</span>
+                      <div className="flex-1 text-right mr-3">
+                        <span className={`text-sm font-medium ${inv.is_issued ? 'text-green-600' : 'text-gray-900'}`}>{fmt(inv.total_amount)}원</span>
+                        <p className="text-[11px] text-gray-400">{fmt(inv.supply_amount)} + {fmt(inv.tax_amount)}</p>
+                      </div>
+                      <button
+                        onClick={() => handleToggleIssue(inv.bill_id, inv.item_type)}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
+                          inv.is_issued
+                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                            : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                        }`}
+                      >
+                        {inv.is_issued ? '발행' : '대기'}
+                      </button>
                     </div>
                   ))}
                 </div>
