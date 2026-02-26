@@ -152,55 +152,80 @@ export default function TaxInvoiceView() {
         </div>
       )}
 
-      {/* Invoice list — 항목별 개별 표시 */}
-      <div className="space-y-2">
-        {filtered.map((inv) => (
-          <div key={`${inv.bill_id}-${inv.item_type}`} className={`bg-white rounded-xl border-2 p-4 ${inv.is_issued ? 'border-green-200' : 'border-gray-200'}`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
-                  {inv.floor}F
-                </span>
-                <div>
-                  <span className="font-semibold text-gray-900 text-sm">{inv.company_name}</span>
-                  <span className="ml-2 text-xs text-gray-500">{inv.item_name}</span>
-                  {inv.business_number && (
-                    <p className="text-xs text-gray-400">{inv.business_number}</p>
-                  )}
+      {/* Invoice list — 입주사별 그룹 + 항목 테이블 */}
+      <div className="space-y-3">
+        {(() => {
+          // 입주사별 그룹핑
+          const grouped = {};
+          filtered.forEach((inv) => {
+            const key = `${inv.floor}-${inv.company_name}`;
+            if (!grouped[key]) grouped[key] = { floor: inv.floor, company_name: inv.company_name, business_number: inv.business_number, items: [] };
+            grouped[key].items.push(inv);
+          });
+          return Object.values(grouped).map((group) => {
+            const totalAmount = group.items.reduce((s, i) => s + i.total_amount, 0);
+            const issuedCount = group.items.filter((i) => i.is_issued).length;
+            const allIssued = issuedCount === group.items.length;
+
+            return (
+              <div key={`${group.floor}-${group.company_name}`} className={`bg-white rounded-xl border-2 p-4 ${allIssued ? 'border-green-200' : 'border-gray-200'}`}>
+                {/* Header: 업체명 + 상태 + 합계 */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
+                      {group.floor}F
+                    </span>
+                    <div>
+                      <span className="font-semibold text-gray-900 text-sm">{group.company_name}</span>
+                      {group.business_number && (
+                        <p className="text-xs text-gray-400">{group.business_number}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                      allIssued ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {allIssued ? '전체발행' : `${issuedCount}/${group.items.length}`}
+                    </span>
+                    <span className="font-bold text-sm">{fmt(totalAmount)}원</span>
+                  </div>
+                </div>
+
+                {/* 항목 테이블: 항목명 | 공급가액 | 세액 | 합계 | 상태 */}
+                <div className="border border-gray-100 rounded-lg overflow-hidden">
+                  <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-2 px-3 py-1.5 bg-gray-50 text-xs text-gray-400">
+                    <span>항목</span>
+                    <span className="w-20 text-right">공급가액</span>
+                    <span className="w-16 text-right">세액</span>
+                    <span className="w-20 text-right">합계</span>
+                    <span className="w-16 text-center">상태</span>
+                  </div>
+                  {group.items.map((inv) => (
+                    <div key={`${inv.bill_id}-${inv.item_type}`} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-2 items-center px-3 py-2 border-t border-gray-50 text-xs">
+                      <span className="text-sm text-gray-900">{inv.item_name}</span>
+                      <span className="w-20 text-right text-gray-700">{fmt(inv.supply_amount)}</span>
+                      <span className="w-16 text-right text-gray-500">{fmt(inv.tax_amount)}</span>
+                      <span className={`w-20 text-right font-medium ${inv.is_issued ? 'text-green-600' : 'text-gray-900'}`}>{fmt(inv.total_amount)}</span>
+                      <span className="w-16 text-center">
+                        <button
+                          onClick={() => handleToggleIssue(inv.bill_id, inv.item_type)}
+                          className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            inv.is_issued
+                              ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                              : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                          }`}
+                        >
+                          {inv.is_issued ? '발행' : '대기'}
+                        </button>
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <button
-                onClick={() => handleToggleIssue(inv.bill_id, inv.item_type)}
-                className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg min-h-[36px] ${
-                  inv.is_issued
-                    ? 'bg-green-100 text-green-700 hover:bg-yellow-50 hover:text-yellow-700'
-                    : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-700'
-                }`}
-              >
-                {inv.is_issued ? <Check className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
-                {inv.is_issued ? '발행완료' : '발행처리'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 text-sm">
-              <div>
-                <p className="text-xs text-gray-400">공급가액</p>
-                <p className="font-medium">{fmt(inv.supply_amount)}원</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">세액</p>
-                <p className="font-medium">{fmt(inv.tax_amount)}원</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">합계</p>
-                <p className="font-bold">{fmt(inv.total_amount)}원</p>
-              </div>
-            </div>
-            {inv.is_issued && inv.issued_date && (
-              <p className="text-xs text-green-600 mt-2">발행일: {inv.issued_date}</p>
-            )}
-          </div>
-        ))}
+            );
+          });
+        })()}
       </div>
 
       {filtered.length === 0 && (

@@ -11,8 +11,8 @@ const PAY_FIELDS = [
   { field: 'water_paid', label: '수도', amountField: 'water_amount' },
 ];
 
-const vat = (n) => Math.round((n || 0) * 0.1);
-const withVat = (n) => (n || 0) + vat(n);
+const vatOf = (n) => Math.round((n || 0) * 0.1);
+const withVat = (n) => (n || 0) + vatOf(n);
 
 export default function BillingView() {
   const now = new Date();
@@ -113,9 +113,9 @@ export default function BillingView() {
         <BuildingBillForm year={year} month={month} onSaved={loadBills} />
       </div>
 
-      {/* Info: 임대료/관리비 자동생성 안내 */}
+      {/* Info */}
       <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-700 text-xs">
-        임대료/관리비는 각 입주사의 청구일에 자동 생성됩니다. 아래에서 건물 공과금 입력 후 공과금 배분을 실행하세요.
+        임대료/관리비는 각 입주사의 청구일에 자동 생성됩니다. 건물 공과금 입력 후 공과금 배분을 실행하세요.
       </div>
 
       {/* Generate button */}
@@ -179,9 +179,12 @@ export default function BillingView() {
         {bills.map((bill) => {
           const totalWithVat = PAY_FIELDS.reduce((s, { amountField }) => s + withVat(bill[amountField]), 0);
           const allPaid = PAY_FIELDS.every(({ field, amountField }) => bill[amountField] === 0 || bill[field]);
+          const paidCount = PAY_FIELDS.filter(({ field, amountField }) => bill[amountField] > 0 && bill[field]).length;
+          const totalCount = PAY_FIELDS.filter(({ amountField }) => bill[amountField] > 0).length;
 
           return (
             <div key={bill.id} className={`bg-white rounded-xl border-2 p-4 ${allPaid ? 'border-green-200' : 'border-gray-200'}`}>
+              {/* Header: 업체명 + 상태 + 합계 */}
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
@@ -189,45 +192,50 @@ export default function BillingView() {
                   </span>
                   <span className="font-semibold text-gray-900 text-sm">{bill.company_name}</span>
                 </div>
-                <span className="font-bold text-sm">{fmt(totalWithVat)}원</span>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                    allPaid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {allPaid ? '완납' : `${paidCount}/${totalCount}`}
+                  </span>
+                  <span className="font-bold text-sm">{fmt(totalWithVat)}원</span>
+                </div>
               </div>
 
-              <div className="space-y-3">
+              {/* 항목 테이블: 항목명 | 공급가액 | 부가세 | 합계 */}
+              <div className="border border-gray-100 rounded-lg overflow-hidden">
+                {/* 테이블 헤더 */}
+                <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-2 px-3 py-1.5 bg-gray-50 text-xs text-gray-400">
+                  <span>항목</span>
+                  <span className="w-20 text-right">공급가액</span>
+                  <span className="w-16 text-right">부가세</span>
+                  <span className="w-20 text-right">합계</span>
+                  <span className="w-16 text-center">상태</span>
+                </div>
                 {PAY_FIELDS.map(({ field, label, amountField }) => {
                   const amount = bill[amountField];
                   if (amount === 0) return null;
                   const isPaid = bill[field];
-                  const vatAmt = vat(amount);
-                  const total = amount + vatAmt;
+                  const v = vatOf(amount);
+                  const t = amount + v;
                   return (
-                    <div key={field} className="border-b border-gray-50 last:border-0 pb-2 last:pb-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-900">{label}</span>
+                    <div key={field} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-2 items-center px-3 py-2 border-t border-gray-50 text-xs">
+                      <span className="text-sm text-gray-900">{label}</span>
+                      <span className="w-20 text-right text-gray-700">{fmt(amount)}</span>
+                      <span className="w-16 text-right text-gray-500">{fmt(v)}</span>
+                      <span className={`w-20 text-right font-medium ${isPaid ? 'text-green-600' : 'text-gray-900'}`}>{fmt(t)}</span>
+                      <span className="w-16 text-center">
                         <button
                           onClick={() => handleTogglePay(bill.id, field)}
-                          className={`px-2.5 py-1 text-xs font-medium rounded-full min-h-[28px] ${
+                          className={`px-2 py-1 text-xs font-medium rounded-full ${
                             isPaid
                               ? 'bg-green-100 text-green-700 hover:bg-green-200'
                               : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                           }`}
                         >
-                          {isPaid ? '납부완료' : '납부대기'}
+                          {isPaid ? '완료' : '대기'}
                         </button>
-                      </div>
-                      <div className="grid grid-cols-3 text-xs text-gray-500">
-                        <div>
-                          <span className="text-gray-400">공급가액</span>
-                          <p className="font-medium text-gray-700">{fmt(amount)}</p>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">부가세</span>
-                          <p className="font-medium text-gray-700">{fmt(vatAmt)}</p>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-gray-400">합계</span>
-                          <p className={`font-bold ${isPaid ? 'text-green-600' : 'text-gray-900'}`}>{fmt(total)}</p>
-                        </div>
-                      </div>
+                      </span>
                     </div>
                   );
                 })}
