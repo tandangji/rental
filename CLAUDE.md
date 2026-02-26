@@ -272,3 +272,4 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | 버전 | 날짜 | 내용 |
 |------|------|------|
 | v1.0 | 2026-02-26 | 초기 구현 (전체 시스템) |
+| v1.1 | 2026-02-26 | 입주사 settings 민감 정보 필터링 (sms_api_key, sms_sender_number) |
