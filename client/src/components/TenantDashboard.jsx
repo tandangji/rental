@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BankInfo from './BankInfo';
-import { Camera, AlertCircle } from 'lucide-react';
+import { Camera, AlertCircle, Building2 } from 'lucide-react';
 
 const ITEMS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
@@ -20,16 +20,19 @@ export default function TenantDashboard({ user, settings }) {
   const month = now.getMonth() + 1;
   const [bill, setBill] = useState(null);
   const [readings, setReadings] = useState([]);
+  const [tenant, setTenant] = useState(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const [bRes, rRes] = await Promise.all([
+        const [bRes, rRes, tRes] = await Promise.all([
           authFetch(`${API_BASE}/monthly-bills?year=${year}&month=${month}`),
           authFetch(`${API_BASE}/meter-readings?year=${year}&month=${month}`),
+          authFetch(`${API_BASE}/tenants`),
         ]);
         if (bRes.ok) { const data = await bRes.json(); setBill(data[0] || null); }
         if (rRes.ok) setReadings(await rRes.json());
+        if (tRes.ok) { const data = await tRes.json(); setTenant(data[0] || null); }
       } catch {}
     })();
   }, []);
@@ -42,10 +45,43 @@ export default function TenantDashboard({ user, settings }) {
     ? ITEMS.reduce((s, { amountField }) => s + withVat(bill[amountField]), 0)
     : 0;
 
+  const fmtDate = (d) => {
+    if (!d) return '-';
+    return d.slice(0, 10);
+  };
+
   return (
     <div>
       <h2 className="text-lg font-bold text-gray-900 mb-1">{user.name}</h2>
       <p className="text-sm text-gray-500 mb-4">{user.floor}층 · {year}년 {month}월</p>
+
+      {/* 계약 정보 요약 */}
+      {tenant && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Building2 className="w-4 h-4 text-blue-600" />
+            <h3 className="font-semibold text-gray-900 text-sm">계약 정보</h3>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <div>
+              <p className="text-xs text-gray-400">계약기간</p>
+              <p className="text-gray-900">{fmtDate(tenant.lease_start)} ~ {fmtDate(tenant.lease_end)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">보증금</p>
+              <p className="text-gray-900 font-medium">{fmt(tenant.deposit_amount)}원</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">임대료 (부가세 별도)</p>
+              <p className="text-gray-900 font-medium">{fmt(tenant.rent_amount)}원</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">관리비 (부가세 별도)</p>
+              <p className="text-gray-900 font-medium">{fmt(tenant.maintenance_fee)}원</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Photo upload status */}
       {missingPhotos > 0 && (
