@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BuildingBillForm from './BuildingBillForm';
-import { FileText, Check, X, MessageSquare } from 'lucide-react';
+import { FileText, MessageSquare } from 'lucide-react';
 
 const PAY_FIELDS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
@@ -10,6 +10,9 @@ const PAY_FIELDS = [
   { field: 'electricity_paid', label: '전기', amountField: 'electricity_amount' },
   { field: 'water_paid', label: '수도', amountField: 'water_amount' },
 ];
+
+const vat = (n) => Math.round((n || 0) * 0.1);
+const withVat = (n) => (n || 0) + vat(n);
 
 export default function BillingView() {
   const now = new Date();
@@ -78,10 +81,12 @@ export default function BillingView() {
 
   const fmt = (n) => (n || 0).toLocaleString();
 
-  const totalAll = bills.reduce((s, b) => s + b.rent_amount + b.maintenance_fee + b.gas_amount + b.electricity_amount + b.water_amount, 0);
+  const totalAll = bills.reduce((s, b) => {
+    return s + PAY_FIELDS.reduce((ss, { amountField }) => ss + withVat(b[amountField]), 0);
+  }, 0);
   const totalPaid = bills.reduce((s, b) => {
     let paid = 0;
-    PAY_FIELDS.forEach(({ field, amountField }) => { if (b[field]) paid += b[amountField]; });
+    PAY_FIELDS.forEach(({ field, amountField }) => { if (b[field]) paid += withVat(b[amountField]); });
     return s + paid;
   }, 0);
 
@@ -153,6 +158,7 @@ export default function BillingView() {
       {/* Summary */}
       {bills.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+          <p className="text-xs text-gray-400 mb-2">부가세 10% 포함</p>
           <div className="flex justify-between text-sm">
             <span className="text-gray-500">총 청구액</span>
             <span className="font-bold">{fmt(totalAll)}원</span>
@@ -171,9 +177,7 @@ export default function BillingView() {
       {/* Bill cards */}
       <div className="space-y-3">
         {bills.map((bill) => {
-          const total = bill.rent_amount + bill.maintenance_fee + bill.gas_amount + bill.electricity_amount + bill.water_amount;
-          let paid = 0;
-          PAY_FIELDS.forEach(({ field, amountField }) => { if (bill[field]) paid += bill[amountField]; });
+          const totalWithVat = PAY_FIELDS.reduce((s, { amountField }) => s + withVat(bill[amountField]), 0);
           const allPaid = PAY_FIELDS.every(({ field, amountField }) => bill[amountField] === 0 || bill[field]);
 
           return (
@@ -185,30 +189,45 @@ export default function BillingView() {
                   </span>
                   <span className="font-semibold text-gray-900 text-sm">{bill.company_name}</span>
                 </div>
-                <span className="font-bold text-sm">{fmt(total)}원</span>
+                <span className="font-bold text-sm">{fmt(totalWithVat)}원</span>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {PAY_FIELDS.map(({ field, label, amountField }) => {
                   const amount = bill[amountField];
                   if (amount === 0) return null;
                   const isPaid = bill[field];
+                  const vatAmt = vat(amount);
+                  const total = amount + vatAmt;
                   return (
-                    <div key={field} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
+                    <div key={field} className="border-b border-gray-50 last:border-0 pb-2 last:pb-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-900">{label}</span>
                         <button
                           onClick={() => handleTogglePay(bill.id, field)}
-                          className={`w-6 h-6 rounded flex items-center justify-center ${
-                            isPaid ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-300 hover:bg-gray-200'
+                          className={`px-2.5 py-1 text-xs font-medium rounded-full min-h-[28px] ${
+                            isPaid
+                              ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                              : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                           }`}
                         >
-                          {isPaid ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                          {isPaid ? '납부완료' : '납부대기'}
                         </button>
-                        <span className="text-sm text-gray-700">{label}</span>
                       </div>
-                      <span className={`text-sm font-medium ${isPaid ? 'text-green-600' : 'text-gray-900'}`}>
-                        {fmt(amount)}원
-                      </span>
+                      <div className="grid grid-cols-3 text-xs text-gray-500">
+                        <div>
+                          <span className="text-gray-400">공급가액</span>
+                          <p className="font-medium text-gray-700">{fmt(amount)}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">부가세</span>
+                          <p className="font-medium text-gray-700">{fmt(vatAmt)}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-gray-400">합계</span>
+                          <p className={`font-bold ${isPaid ? 'text-green-600' : 'text-gray-900'}`}>{fmt(total)}</p>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}

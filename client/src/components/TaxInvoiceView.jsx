@@ -61,8 +61,8 @@ export default function TaxInvoiceView() {
       const itemCols = [];
       inv.items.forEach((item, idx) => {
         if (idx >= 4) return;
-        const itemSupply = Math.round(item.amount / 1.1);
-        const itemTax = item.amount - itemSupply;
+        const itemSupply = item.amount;
+        const itemTax = Math.round(item.amount * 0.1);
         itemCols.push(dateStr, item.name, '', '1', itemSupply, itemSupply, itemTax, '');
       });
       // Pad remaining item slots

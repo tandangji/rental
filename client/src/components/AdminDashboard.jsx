@@ -33,13 +33,16 @@ export default function AdminDashboard() {
   const totalExpected = activeTenants.length;
   const allUploaded = uploadedCount === totalExpected && totalExpected > 0;
 
-  // Billing stats
-  const totalBilled = bills.reduce((s, b) => s + b.rent_amount + b.maintenance_fee + b.gas_amount + b.electricity_amount + b.water_amount, 0);
+  // Billing stats (부가세 10% 포함)
+  const withVat = (n) => (n || 0) + Math.round((n || 0) * 0.1);
   const payFields = ['rent_paid', 'maintenance_paid', 'gas_paid', 'electricity_paid', 'water_paid'];
   const amtFields = ['rent_amount', 'maintenance_fee', 'gas_amount', 'electricity_amount', 'water_amount'];
+  const totalBilled = bills.reduce((s, b) => {
+    return s + amtFields.reduce((ss, f) => ss + withVat(b[f]), 0);
+  }, 0);
   const totalPaid = bills.reduce((s, b) => {
     let p = 0;
-    payFields.forEach((f, i) => { if (b[f]) p += b[amtFields[i]]; });
+    payFields.forEach((f, i) => { if (b[f]) p += withVat(b[amtFields[i]]); });
     return s + p;
   }, 0);
   const unpaidTenants = bills.filter((b) => !payFields.every((f, i) => b[amtFields[i]] === 0 || b[f])).length;

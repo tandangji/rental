@@ -731,9 +731,9 @@ const pool = new Pool({
         if (r.gas_amount > 0) items.push({ name: "가스", amount: r.gas_amount });
         if (r.electricity_amount > 0) items.push({ name: "전기", amount: r.electricity_amount });
         if (r.water_amount > 0) items.push({ name: "수도", amount: r.water_amount });
-        const totalAmount = items.reduce((s, i) => s + i.amount, 0);
-        const supplyAmount = Math.round(totalAmount / 1.1);
-        const taxAmount = totalAmount - supplyAmount;
+        const supplyAmount = items.reduce((s, i) => s + i.amount, 0);
+        const taxAmount = Math.round(supplyAmount * 0.1);
+        const totalAmount = supplyAmount + taxAmount;
         return {
           bill_id: r.bill_id,
           tenant_id: r.tenant_id,
