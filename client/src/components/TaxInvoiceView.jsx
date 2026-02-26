@@ -199,7 +199,8 @@ export default function TaxInvoiceView() {
                       <span className="text-sm text-gray-900 min-w-[40px]">{inv.item_name}</span>
                       <div className="flex-1 text-right mr-3">
                         <span className={`text-sm font-medium ${inv.is_issued ? 'text-green-600' : 'text-gray-900'}`}>{fmt(inv.total_amount)}원</span>
-                        <p className="text-[11px] text-gray-400">{fmt(inv.supply_amount)} + {fmt(inv.tax_amount)}</p>
+                        <p className="text-[11px] text-gray-400">공급 {fmt(inv.supply_amount)}</p>
+                        <p className="text-[11px] text-gray-400">세액 {fmt(inv.tax_amount)}</p>
                       </div>
                       <button
                         onClick={() => handleToggleIssue(inv.bill_id, inv.item_type)}

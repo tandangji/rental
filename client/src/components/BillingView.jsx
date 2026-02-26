@@ -215,7 +215,8 @@ export default function BillingView() {
                       <span className="text-sm text-gray-900 min-w-[40px]">{label}</span>
                       <div className="flex-1 text-right mr-3">
                         <span className={`text-sm font-medium ${isPaid ? 'text-green-600' : 'text-gray-900'}`}>{fmt(t)}원</span>
-                        <p className="text-[11px] text-gray-400">{fmt(amount)} + {fmt(v)}</p>
+                        <p className="text-[11px] text-gray-400">공급 {fmt(amount)}</p>
+                        <p className="text-[11px] text-gray-400">세액 {fmt(v)}</p>
                       </div>
                       <button
                         onClick={() => handleTogglePay(bill.id, field)}
