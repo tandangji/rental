@@ -404,7 +404,11 @@ const pool = new Pool({
     try {
       const { rows } = await pool.query("SELECT * FROM settings ORDER BY key");
       const obj = {};
-      rows.forEach((r) => (obj[r.key] = r.value));
+      const sensitiveKeys = ["sms_api_key", "sms_sender_number"];
+      rows.forEach((r) => {
+        if (req.user.role !== "admin" && sensitiveKeys.includes(r.key)) return;
+        obj[r.key] = r.value;
+      });
       res.json(obj);
     } catch (err) {
       console.error(err);
