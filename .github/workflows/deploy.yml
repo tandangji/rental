@@ -1,0 +1,22 @@
+name: Deploy to Lightsail
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 43.203.204.208
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            cd ~/apps/rental
+            git pull
+            cd ~/apps
+            docker compose build rental
+            docker compose up -d rental
