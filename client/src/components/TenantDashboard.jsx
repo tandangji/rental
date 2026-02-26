@@ -79,6 +79,10 @@ export default function TenantDashboard({ user, settings }) {
               <p className="text-xs text-gray-400">관리비 (부가세 별도)</p>
               <p className="text-gray-900 font-medium">{fmt(tenant.maintenance_fee)}원</p>
             </div>
+            <div>
+              <p className="text-xs text-gray-400">청구일 / 납부방식</p>
+              <p className="text-gray-900 font-medium">매월 {tenant.billing_day}일 · {tenant.payment_type === 'postpaid' ? '후불' : '선불'}</p>
+            </div>
           </div>
         </div>
       )}
