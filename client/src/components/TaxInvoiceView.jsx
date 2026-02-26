@@ -135,18 +135,18 @@ export default function TaxInvoiceView() {
       {/* Summary */}
       {filtered.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-3 gap-1 text-center">
             <div>
               <p className="text-xs text-gray-500">공급가액</p>
-              <p className="font-bold text-xs">{fmt(filtered.reduce((s, i) => s + i.supply_amount, 0))}</p>
+              <p className="font-bold text-[11px]">{fmt(filtered.reduce((s, i) => s + i.supply_amount, 0))}원</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">세액</p>
-              <p className="font-bold text-xs">{fmt(filtered.reduce((s, i) => s + i.tax_amount, 0))}</p>
+              <p className="font-bold text-[11px]">{fmt(filtered.reduce((s, i) => s + i.tax_amount, 0))}원</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">합계</p>
-              <p className="font-bold text-sm">{fmt(filtered.reduce((s, i) => s + i.total_amount, 0))}</p>
+              <p className="font-bold text-[11px]">{fmt(filtered.reduce((s, i) => s + i.total_amount, 0))}원</p>
             </div>
           </div>
         </div>
