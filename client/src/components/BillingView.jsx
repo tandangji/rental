@@ -30,7 +30,7 @@ export default function BillingView() {
   useEffect(() => { loadBills(); }, [loadBills]);
 
   const handleGenerate = async () => {
-    if (!confirm(`${year}년 ${month}월 청구서를 생성하시겠습니까?\n기존 청구서가 있으면 덮어씁니다.`)) return;
+    if (!confirm(`${year}년 ${month}월 공과금을 배분하시겠습니까?\n검침값과 건물 공과금을 기반으로 각 층에 배분합니다.`)) return;
     setGenerating(true);
     setMessage('');
     try {
@@ -47,7 +47,7 @@ export default function BillingView() {
         setMessage(data.error);
       }
     } catch {
-      setMessage('생성 실패');
+      setMessage('배분 실패');
     } finally {
       setGenerating(false);
       setTimeout(() => setMessage(''), 5000);
@@ -108,6 +108,11 @@ export default function BillingView() {
         <BuildingBillForm year={year} month={month} onSaved={loadBills} />
       </div>
 
+      {/* Info: 임대료/관리비 자동생성 안내 */}
+      <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-700 text-xs">
+        임대료/관리비는 매월 청구일에 자동 생성됩니다. 아래에서 건물 공과금 입력 후 공과금 배분을 실행하세요.
+      </div>
+
       {/* Generate button */}
       <div className="flex gap-2 mb-4">
         <button
@@ -115,7 +120,7 @@ export default function BillingView() {
           disabled={generating}
           className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 min-h-[44px]"
         >
-          <FileText className="w-4 h-4" /> {generating ? '생성 중...' : '청구서 생성'}
+          <FileText className="w-4 h-4" /> {generating ? '배분 중...' : '공과금 배분'}
         </button>
         {bills.length > 0 && (
           <button
@@ -214,7 +219,7 @@ export default function BillingView() {
       </div>
 
       {bills.length === 0 && (
-        <p className="text-center py-8 text-gray-400">청구서가 없습니다. 건물 공과금 입력 후 청구서를 생성하세요.</p>
+        <p className="text-center py-8 text-gray-400">청구서가 없습니다. 청구일에 임대료/관리비가 자동 생성됩니다.</p>
       )}
     </div>
   );

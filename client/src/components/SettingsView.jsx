@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Save, Building2, CreditCard, MessageSquare } from 'lucide-react';
+import { Save, Building2, CreditCard, MessageSquare, CalendarDays } from 'lucide-react';
 
 const FIELDS = [
   { section: 'building', icon: Building2, title: '건물 정보', fields: [
@@ -8,6 +8,10 @@ const FIELDS = [
     { key: 'landlord_name', label: '건물주명' },
     { key: 'landlord_business_number', label: '사업자등록번호' },
     { key: 'landlord_phone', label: '연락처' },
+  ]},
+  { section: 'billing', icon: CalendarDays, title: '청구 설정', fields: [
+    { key: 'billing_day', label: '매월 청구일 (임대료/관리비 자동 생성일)', type: 'select',
+      options: Array.from({ length: 28 }, (_, i) => ({ value: String(i + 1), label: `${i + 1}일` })) },
   ]},
   { section: 'bank', icon: CreditCard, title: '입금 계좌', fields: [
     { key: 'bank_name', label: '은행명' },
@@ -80,12 +84,24 @@ export default function SettingsView({ settings, onSaved }) {
               {fields.map((f) => (
                 <div key={f.key}>
                   <label className="block text-sm text-gray-600 mb-1">{f.label}</label>
-                  <input
-                    type="text"
-                    value={form[f.key] || ''}
-                    onChange={(e) => set(f.key, e.target.value)}
-                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
+                  {f.type === 'select' ? (
+                    <select
+                      value={form[f.key] || '1'}
+                      onChange={(e) => set(f.key, e.target.value)}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                    >
+                      {f.options.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={form[f.key] || ''}
+                      onChange={(e) => set(f.key, e.target.value)}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  )}
                 </div>
               ))}
             </div>

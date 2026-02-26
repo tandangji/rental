@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const express = require("express");
 const { Pool } = require("pg");
 const cors = require("cors");
+const cron = require("node-cron");
 
 process.on("unhandledRejection", (err) => {
   console.error("Unhandled rejection:", err);
@@ -155,6 +156,7 @@ const pool = new Pool({
     ["bank_holder", ""],
     ["sms_api_key", ""],
     ["sms_sender_number", ""],
+    ["billing_day", "1"],
   ];
   for (const [k, v] of defaultSettings) {
     await pool.query(
@@ -644,20 +646,20 @@ const pool = new Pool({
         }
       }
 
-      // Upsert monthly bills
-      let created = 0;
+      // Upsert: 기존 청구서가 있으면 공과금만 업데이트, 없으면 임대료/관리비 포함 생성
+      let updated = 0;
       for (const t of tenants) {
         const d = distribution[t.id];
         await pool.query(
           `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee, gas_amount, electricity_amount, water_amount)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
            ON CONFLICT (tenant_id, year, month) DO UPDATE SET
-             rent_amount=$4, maintenance_fee=$5, gas_amount=$6, electricity_amount=$7, water_amount=$8`,
+             gas_amount=$6, electricity_amount=$7, water_amount=$8`,
           [t.id, year, month, t.rent_amount, t.maintenance_fee, d.gas_amount, d.electricity_amount, d.water_amount]
         );
-        created++;
+        updated++;
       }
-      res.json({ created, message: `${created}건 청구서 생성 완료` });
+      res.json({ created: updated, message: `${updated}건 공과금 배분 완료` });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });
@@ -882,6 +884,49 @@ const pool = new Pool({
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });
     }
+  });
+
+  // ─── Auto Bill Generation ─────────────────────────────────
+  // 매월 청구일에 임대료+관리비 자동 생성 (공과금은 제외)
+  async function autoGenerateRentBills() {
+    try {
+      const { rows: settingsRows } = await pool.query("SELECT value FROM settings WHERE key = 'billing_day'");
+      const billingDay = parseInt(settingsRows[0]?.value) || 1;
+
+      // KST 기준 오늘 날짜
+      const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+      const today = now.getDate();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+
+      if (today !== billingDay) return;
+
+      const { rows: tenants } = await pool.query("SELECT * FROM tenants WHERE is_active = TRUE");
+      if (tenants.length === 0) return;
+
+      let created = 0;
+      for (const t of tenants) {
+        // INSERT ... ON CONFLICT DO NOTHING → 이미 생성된 건은 건너뜀
+        const { rowCount } = await pool.query(
+          `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee)
+           VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (tenant_id, year, month) DO NOTHING`,
+          [t.id, year, month, t.rent_amount, t.maintenance_fee]
+        );
+        if (rowCount > 0) created++;
+      }
+      if (created > 0) {
+        console.log(`[자동청구] ${year}년 ${month}월 임대료/관리비 ${created}건 생성`);
+      }
+    } catch (err) {
+      console.error("[자동청구] 오류:", err.message);
+    }
+  }
+
+  // 서버 시작 시 한 번 실행 + 매일 00:05 KST (= 15:05 UTC) 실행
+  autoGenerateRentBills();
+  cron.schedule("5 15 * * *", () => {
+    autoGenerateRentBills();
   });
 
   // ─── SPA Fallback ─────────────────────────────────────────
