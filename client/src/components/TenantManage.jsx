@@ -99,7 +99,7 @@ export default function TenantManage() {
                 {t.lease_start && t.lease_end && (
                   <span className="flex items-center gap-1"><Building className="w-3 h-3" />{t.lease_start} ~ {t.lease_end}</span>
                 )}
-                <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" />청구일: 매월 {t.billing_day}일</span>
+                <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" />매월 {t.billing_day}일 · {t.payment_type === 'postpaid' ? '후불' : '선불'}</span>
               </div>
 
               {!t.is_active && (

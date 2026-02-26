@@ -74,10 +74,16 @@ const pool = new Pool({
       lease_start DATE,
       lease_end DATE,
       billing_day INTEGER NOT NULL DEFAULT 1,
+      payment_type TEXT NOT NULL DEFAULT 'prepaid',
       is_active BOOLEAN DEFAULT TRUE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // payment_type 컬럼이 없으면 추가
+  await pool.query(`
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS payment_type TEXT NOT NULL DEFAULT 'prepaid'
+  `).catch(() => {});
 
   // billing_day 컬럼이 없으면 추가 (기존 DB 마이그레이션)
   await pool.query(`
@@ -320,7 +326,7 @@ const pool = new Pool({
   });
 
   app.post("/tenants", requireAdmin, async (req, res) => {
-    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day } = req.body;
+    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type } = req.body;
     if (!floor || !company_name) {
       return res.status(400).json({ error: "층수와 업체명은 필수입니다" });
     }
@@ -331,9 +337,9 @@ const pool = new Pool({
       }
       const pw = password || String(floor).padStart(4, "0");
       const { rows } = await pool.query(
-        `INSERT INTO tenants (floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
-        [floor, company_name, business_number || null, representative || null, business_type || null, business_item || null, address || null, contact_phone || null, email || null, pw, rent_amount || 0, maintenance_fee || 0, deposit_amount || 0, lease_start || null, lease_end || null, billing_day || 1]
+        `INSERT INTO tenants (floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+        [floor, company_name, business_number || null, representative || null, business_type || null, business_item || null, address || null, contact_phone || null, email || null, pw, rent_amount || 0, maintenance_fee || 0, deposit_amount || 0, lease_start || null, lease_end || null, billing_day || 1, payment_type || 'prepaid']
       );
       res.json({ id: rows[0].id });
     } catch (err) {
@@ -344,7 +350,7 @@ const pool = new Pool({
 
   app.put("/tenants/:id", requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, is_active, billing_day } = req.body;
+    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, is_active, billing_day, payment_type } = req.body;
     try {
       // Check floor conflict
       if (floor) {
@@ -371,9 +377,10 @@ const pool = new Pool({
           lease_start = $14,
           lease_end = $15,
           is_active = COALESCE($16, is_active),
-          billing_day = COALESCE($17, billing_day)
-        WHERE id = $18`,
-        [floor, company_name, business_number ?? null, representative ?? null, business_type ?? null, business_item ?? null, address ?? null, contact_phone ?? null, email ?? null, password || "", rent_amount, maintenance_fee, deposit_amount, lease_start || null, lease_end || null, is_active, billing_day, id]
+          billing_day = COALESCE($17, billing_day),
+          payment_type = COALESCE($18, payment_type)
+        WHERE id = $19`,
+        [floor, company_name, business_number ?? null, representative ?? null, business_type ?? null, business_item ?? null, address ?? null, contact_phone ?? null, email ?? null, password || "", rent_amount, maintenance_fee, deposit_amount, lease_start || null, lease_end || null, is_active, billing_day, payment_type, id]
       );
       res.json({ success: true });
     } catch (err) {
@@ -926,17 +933,24 @@ const pool = new Pool({
 
       let created = 0;
       for (const t of tenants) {
-        // INSERT ... ON CONFLICT DO NOTHING → 이미 생성된 건은 건너뜀
+        // 선불: 당월 청구, 후불: 전월 청구
+        let billYear = year;
+        let billMonth = month;
+        if (t.payment_type === 'postpaid') {
+          billMonth = month - 1;
+          if (billMonth === 0) { billMonth = 12; billYear = year - 1; }
+        }
+
         const { rowCount } = await pool.query(
           `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee)
            VALUES ($1,$2,$3,$4,$5)
            ON CONFLICT (tenant_id, year, month) DO NOTHING`,
-          [t.id, year, month, t.rent_amount, t.maintenance_fee]
+          [t.id, billYear, billMonth, t.rent_amount, t.maintenance_fee]
         );
         if (rowCount > 0) created++;
       }
       if (created > 0) {
-        console.log(`[자동청구] ${year}년 ${month}월 임대료/관리비 ${created}건 생성 (청구일: ${today}일)`);
+        console.log(`[자동청구] 임대료/관리비 ${created}건 생성 (청구일: ${today}일)`);
       }
     } catch (err) {
       console.error("[자동청구] 오류:", err.message);
