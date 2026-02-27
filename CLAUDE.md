@@ -273,3 +273,4 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 |------|------|------|
 | v1.0 | 2026-02-26 | 초기 구현 (전체 시스템) |
 | v1.1 | 2026-02-26 | 입주사 settings 민감 정보 필터링 (sms_api_key, sms_sender_number) |
+| v1.2 | 2026-02-27 | 보안 강화: helmet, rate-limit, 세션 TTL 8시간, 업로드 검증(매직바이트+5MB), 파일명 sanitize |
