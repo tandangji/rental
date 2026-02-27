@@ -6,7 +6,16 @@ const MAX_WIDTH = 1280;
 const MAX_HEIGHT = 1280;
 const QUALITY = 0.7;
 
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
 export function compressImage(file) {
+  if (!file.type.startsWith('image/')) {
+    return Promise.reject(new Error('이미지 파일만 업로드 가능합니다'));
+  }
+  if (file.size > MAX_FILE_SIZE) {
+    return Promise.reject(new Error('파일 크기는 50MB 이하여야 합니다'));
+  }
+
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {

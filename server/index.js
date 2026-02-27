@@ -3,6 +3,8 @@ const crypto = require("crypto");
 const express = require("express");
 const { Pool } = require("pg");
 const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const cron = require("node-cron");
 
 process.on("unhandledRejection", (err) => {
@@ -15,6 +17,15 @@ process.on("uncaughtException", (err) => {
 
 const app = express();
 const sessions = new Map();
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8시간
+
+// 1시간마다 만료 세션 정리
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of sessions) {
+    if (now - data.createdAt > SESSION_TTL_MS) sessions.delete(token);
+  }
+}, 60 * 60 * 1000);
 
 if (process.env.ALLOWED_ORIGINS) {
   const allowedOrigins = process.env.ALLOWED_ORIGINS.split(",").map((s) => s.trim());
@@ -22,6 +33,8 @@ if (process.env.ALLOWED_ORIGINS) {
 } else {
   app.use(cors({ origin: false }));
 }
+
+app.use(helmet());
 
 app.use(express.json({ limit: "10mb" }));
 
@@ -203,8 +216,16 @@ const pool = new Pool({
   console.log("테이블 초기화 완료");
 
   // ─── Auth Routes ──────────────────────────────────────────
+  const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15분
+    max: 10,
+    message: { error: "너무 많은 로그인 시도입니다. 잠시 후 다시 시도하세요" },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
   // Login
-  app.post("/login", async (req, res) => {
+  app.post("/login", loginLimiter, async (req, res) => {
     const { isAdmin, password, companyName, tenantPassword } = req.body;
 
     if (isAdmin) {
@@ -212,7 +233,7 @@ const pool = new Pool({
         return res.status(401).json({ error: "관리자 비밀번호가 올바르지 않습니다" });
       }
       const token = crypto.randomUUID();
-      sessions.set(token, { id: "admin", name: "건물주", role: "admin" });
+      sessions.set(token, { id: "admin", name: "건물주", role: "admin", createdAt: Date.now() });
       return res.json({ id: "admin", name: "건물주", role: "admin", token });
     }
 
@@ -235,6 +256,7 @@ const pool = new Pool({
         name: tenant.company_name,
         floor: tenant.floor,
         role: "tenant",
+        createdAt: Date.now(),
       });
       return res.json({
         id: tenant.id,
@@ -266,6 +288,10 @@ const pool = new Pool({
     if (!token) return res.status(401).json({ error: "인증이 필요합니다" });
     const user = sessions.get(token);
     if (!user) return res.status(401).json({ error: "세션이 만료되었습니다" });
+    if (Date.now() - user.createdAt > SESSION_TTL_MS) {
+      sessions.delete(token);
+      return res.status(401).json({ error: "세션이 만료되었습니다" });
+    }
     req.user = user;
     next();
   }, async (req, res) => {
@@ -295,8 +321,13 @@ const pool = new Pool({
     if (!auth || !auth.startsWith("Bearer ")) {
       return res.status(401).json({ error: "인증이 필요합니다" });
     }
-    const user = sessions.get(auth.slice(7));
+    const token = auth.slice(7);
+    const user = sessions.get(token);
     if (!user) {
+      return res.status(401).json({ error: "세션이 만료되었습니다" });
+    }
+    if (Date.now() - user.createdAt > SESSION_TTL_MS) {
+      sessions.delete(token);
       return res.status(401).json({ error: "세션이 만료되었습니다" });
     }
     req.user = user;
@@ -473,9 +504,27 @@ const pool = new Pool({
       }
 
       let photoBuf = null;
+      let safeName = null;
       if (photo_base64) {
         const base64Data = photo_base64.replace(/^data:[^;]+;base64,/, "");
         photoBuf = Buffer.from(base64Data, "base64");
+
+        // 5MB 제한
+        if (photoBuf.length > 5 * 1024 * 1024) {
+          return res.status(400).json({ error: "파일 크기는 5MB 이하여야 합니다" });
+        }
+
+        // 매직 바이트로 이미지 타입 확인
+        const isJpeg = photoBuf[0] === 0xFF && photoBuf[1] === 0xD8 && photoBuf[2] === 0xFF;
+        const isPng = photoBuf[0] === 0x89 && photoBuf[1] === 0x50 && photoBuf[2] === 0x4E && photoBuf[3] === 0x47;
+        if (!isJpeg && !isPng) {
+          return res.status(400).json({ error: "JPEG 또는 PNG 이미지만 업로드 가능합니다" });
+        }
+      }
+
+      // 파일명 sanitize
+      if (photo_filename) {
+        safeName = path.basename(photo_filename).replace(/[^a-zA-Z0-9가-힣._-]/g, "_");
       }
 
       const now = new Date().toISOString();
@@ -488,7 +537,7 @@ const pool = new Pool({
                        uploaded_at = CASE WHEN $6 IS NOT NULL THEN $8 ELSE meter_readings.uploaded_at END,
                        reading_value = COALESCE($5, meter_readings.reading_value)
          RETURNING id`,
-        [targetTenantId, year, month, utility_type, reading_value ?? null, photoBuf, photo_filename || null, now]
+        [targetTenantId, year, month, utility_type, reading_value ?? null, photoBuf, safeName, now]
       );
       res.json({ id: rows[0].id });
     } catch (err) {
