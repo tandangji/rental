@@ -11,7 +11,7 @@
 | 서버 | AWS Lightsail 43.203.204.208 |
 | GitHub | tandangji/rental |
 | 배포 | GitHub Actions → SSH → docker compose build/up |
-| DB | PostgreSQL 17 (Docker 내부, 포트 5432) |
+| DB | AWS Lightsail Managed Database (PostgreSQL 16, creable-db) — `rental_db` |
 | 내부 포트 | 3000 (nginx 리버스 프록시, SSL) |
 
 ## 기술 스택
