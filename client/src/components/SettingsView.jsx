@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Save, Building2, CreditCard, MessageSquare } from 'lucide-react';
+import { Save, Building2, CreditCard, MessageSquare, Bell } from 'lucide-react';
 
 const FIELDS = [
   { section: 'building', icon: Building2, title: '건물 정보', fields: [
@@ -70,6 +70,24 @@ export default function SettingsView({ settings, onSaved }) {
       )}
 
       <div className="space-y-4">
+        {/* 공지사항 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Bell className="w-4 h-4 text-gray-500" />
+            <h3 className="font-semibold text-gray-900">공지사항</h3>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">내용 (비워두면 입주사 화면에 표시 안 됨)</label>
+            <textarea
+              value={form.notice || ''}
+              onChange={(e) => set('notice', e.target.value)}
+              rows={4}
+              placeholder="입주사 홈 화면 상단에 표시할 공지사항을 입력하세요"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+            />
+          </div>
+        </div>
+
         {FIELDS.map(({ section, icon: Icon, title, fields }) => (
           <div key={section} className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center gap-2 mb-3">

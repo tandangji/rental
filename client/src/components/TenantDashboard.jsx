@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BankInfo from './BankInfo';
-import { Camera, AlertCircle, Building2 } from 'lucide-react';
+import { Camera, AlertCircle, Building2, Bell } from 'lucide-react';
 
 const ITEMS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
@@ -52,6 +52,17 @@ export default function TenantDashboard({ user, settings }) {
 
   return (
     <div>
+      {/* 공지사항 */}
+      {settings?.notice && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 flex items-start gap-3">
+          <Bell className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-semibold text-blue-700 mb-1">공지사항</p>
+            <p className="text-sm text-blue-800 whitespace-pre-wrap">{settings.notice}</p>
+          </div>
+        </div>
+      )}
+
       <h2 className="text-lg font-bold text-gray-900 mb-1">{user.name}</h2>
       <p className="text-sm text-gray-500 mb-4">{user.floor}층 · {year}년 {month}월</p>
 
