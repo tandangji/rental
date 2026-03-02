@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
+import { X } from 'lucide-react';
 
-export default function TenantPasswordSetup({ onDone }) {
+export default function TenantPasswordSetup({ onDone, onClose }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -42,7 +43,14 @@ export default function TenantPasswordSetup({ onDone }) {
   return (
     <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center px-4">
       <div className="w-full max-w-sm bg-white rounded-xl shadow-xl border border-gray-200 p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-2">비밀번호 초기 설정</h2>
+        <div className="flex items-start justify-between mb-2">
+          <h2 className="text-xl font-bold text-gray-900">비밀번호 초기 설정</h2>
+          {onClose && (
+            <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
         <p className="text-sm text-gray-600 mb-5">최초 로그인입니다. 새 비밀번호를 설정해 주세요.</p>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>

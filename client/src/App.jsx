@@ -11,7 +11,7 @@ import TenantDashboard from './components/TenantDashboard';
 import MeterUpload from './components/MeterUpload';
 import MyBillView from './components/MyBillView';
 import TenantPasswordSetup from './components/TenantPasswordSetup';
-import { Building2, LogOut, LayoutDashboard, Users, Gauge, Receipt, FileText, Settings, Home, Camera, CreditCard } from 'lucide-react';
+import { Building2, LogOut, LayoutDashboard, Users, Gauge, Receipt, FileText, Settings, Home, Camera, CreditCard, KeyRound } from 'lucide-react';
 
 const ADMIN_TABS = [
   { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
@@ -37,6 +37,7 @@ export default function App() {
   });
   const [activeTab, setActiveTab] = useState('dashboard');
   const [settings, setSettings] = useState({});
+  const [showPasswordSetup, setShowPasswordSetup] = useState(true);
 
   useEffect(() => {
     if (currentUser) {
@@ -122,6 +123,15 @@ export default function App() {
             <span className="text-sm text-gray-500">
               {currentUser.name}{currentUser.floor ? ` (${currentUser.floor}층)` : ''}
             </span>
+            {needsPasswordSetup && !showPasswordSetup && (
+              <button
+                onClick={() => setShowPasswordSetup(true)}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100"
+              >
+                <KeyRound className="w-3 h-3" />
+                비밀번호 설정
+              </button>
+            )}
             <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500">
               <LogOut className="w-4 h-4" />
             </button>
@@ -156,7 +166,7 @@ export default function App() {
         </div>
       </nav>
 
-      {needsPasswordSetup && (
+      {needsPasswordSetup && showPasswordSetup && (
         <TenantPasswordSetup
           onDone={() => {
             const updated = { ...currentUser, mustChangePassword: false };
@@ -165,6 +175,7 @@ export default function App() {
             setActiveTab('home');
             loadSettings();
           }}
+          onClose={() => setShowPasswordSetup(false)}
         />
       )}
     </div>
