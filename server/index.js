@@ -108,6 +108,25 @@ const pool = new Pool({
   await pool.query(`
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_day INTEGER NOT NULL DEFAULT 1
   `);
+  // 최초 비밀번호(예: 0001) 사용 여부 플래그
+  await pool.query(`
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN
+  `);
+  // 기존 데이터 보정: 기본 비밀번호(층수 4자리)면 변경 필요로 설정
+  await pool.query(`
+    UPDATE tenants
+    SET must_change_password = CASE
+      WHEN password = LPAD(floor::text, 4, '0') THEN TRUE
+      ELSE FALSE
+    END
+    WHERE must_change_password IS NULL
+  `);
+  await pool.query(`
+    ALTER TABLE tenants ALTER COLUMN must_change_password SET DEFAULT TRUE
+  `);
+  await pool.query(`
+    ALTER TABLE tenants ALTER COLUMN must_change_password SET NOT NULL
+  `);
 
   // monthly_bills
   await pool.query(`
@@ -271,6 +290,7 @@ const pool = new Pool({
         name: tenant.company_name,
         floor: tenant.floor,
         role: "tenant",
+        mustChangePassword: !!tenant.must_change_password,
         createdAt: Date.now(),
       });
       return res.json({
@@ -278,6 +298,7 @@ const pool = new Pool({
         name: tenant.company_name,
         floor: tenant.floor,
         role: "tenant",
+        mustChangePassword: !!tenant.must_change_password,
         token,
       });
     } catch (err) {
@@ -349,6 +370,16 @@ const pool = new Pool({
     next();
   });
 
+  app.use((req, res, next) => {
+    if (req.user.role !== "tenant") return next();
+    if (!req.user.mustChangePassword) return next();
+    if (req.method === "POST" && req.path === "/tenants/me/password") return next();
+    return res.status(403).json({
+      error: "초기 비밀번호를 변경한 뒤 이용할 수 있습니다",
+      code: "PASSWORD_CHANGE_REQUIRED",
+    });
+  });
+
   function requireAdmin(req, res, next) {
     if (req.user.role !== "admin") {
       return res.status(403).json({ error: "관리자 권한이 필요합니다" });
@@ -360,8 +391,8 @@ const pool = new Pool({
   app.get("/tenants", async (req, res) => {
     try {
       if (req.user.role === "tenant") {
-        const { rows } = await pool.query("SELECT * FROM tenants WHERE id = $1", [req.user.id]);
-        return res.json(rows);
+      const { rows } = await pool.query("SELECT * FROM tenants WHERE id = $1", [req.user.id]);
+      return res.json(rows);
       }
       const { rows } = await pool.query("SELECT * FROM tenants ORDER BY floor ASC");
       res.json(rows);
@@ -383,8 +414,8 @@ const pool = new Pool({
       }
       const pw = password || String(floor).padStart(4, "0");
       const { rows } = await pool.query(
-        `INSERT INTO tenants (floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+        `INSERT INTO tenants (floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, must_change_password)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,TRUE) RETURNING id`,
         [floor, company_name, business_number || null, representative || null, business_type || null, business_item || null, address || null, contact_phone || null, email || null, pw, rent_amount || 0, maintenance_fee || 0, deposit_amount || 0, lease_start || null, lease_end || null, billing_day || 1, payment_type || 'prepaid']
       );
       res.json({ id: rows[0].id });
@@ -417,6 +448,10 @@ const pool = new Pool({
           contact_phone = $8,
           email = $9,
           password = COALESCE(NULLIF($10,''), password),
+          must_change_password = CASE
+            WHEN NULLIF($10,'') IS NULL THEN must_change_password
+            ELSE TRUE
+          END,
           rent_amount = COALESCE($11, rent_amount),
           maintenance_fee = COALESCE($12, maintenance_fee),
           deposit_amount = COALESCE($13, deposit_amount),
@@ -442,6 +477,35 @@ const pool = new Pool({
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  app.post("/tenants/me/password", async (req, res) => {
+    if (req.user.role !== "tenant") {
+      return res.status(403).json({ error: "입주사 계정만 사용할 수 있습니다" });
+    }
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "현재 비밀번호와 새 비밀번호를 입력하세요" });
+    }
+    if (String(newPassword).trim().length < 4) {
+      return res.status(400).json({ error: "새 비밀번호는 4자리 이상 입력하세요" });
+    }
+    try {
+      const { rows } = await pool.query("SELECT password FROM tenants WHERE id = $1", [req.user.id]);
+      if (rows.length === 0) return res.status(404).json({ error: "입주사 정보를 찾을 수 없습니다" });
+      if (rows[0].password !== currentPassword) {
+        return res.status(401).json({ error: "현재 비밀번호가 올바르지 않습니다" });
+      }
+      await pool.query(
+        "UPDATE tenants SET password = $1, must_change_password = FALSE WHERE id = $2",
+        [String(newPassword), req.user.id]
+      );
+      req.user.mustChangePassword = false;
+      return res.json({ success: true, mustChangePassword: false });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "서버 오류가 발생했습니다" });
     }
   });
 

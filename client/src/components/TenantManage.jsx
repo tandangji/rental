@@ -87,6 +87,8 @@ export default function TenantManage() {
                 <div className="text-right font-medium">{fmt(t.maintenance_fee)}원</div>
                 <div className="text-gray-500">보증금</div>
                 <div className="text-right font-medium">{fmt(t.deposit_amount)}원</div>
+                <div className="text-gray-500">로그인 비밀번호</div>
+                <div className="text-right font-medium">{t.password}</div>
               </div>
 
               <div className="flex flex-wrap gap-3 mt-3 text-xs text-gray-500">
@@ -104,6 +106,9 @@ export default function TenantManage() {
 
               {!t.is_active && (
                 <span className="inline-block mt-2 px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded">비활성</span>
+              )}
+              {t.must_change_password && (
+                <span className="inline-block mt-2 ml-2 px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded">초기 비밀번호 상태</span>
               )}
             </div>
           ))}

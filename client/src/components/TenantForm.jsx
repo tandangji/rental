@@ -113,6 +113,7 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{isEdit ? '비밀번호 변경' : '비밀번호'}</label>
             <input type="text" value={form.password} onChange={(e) => set('password', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder={isEdit ? '변경 시에만 입력' : '미입력 시 층수 4자리 (예: 0001)'} />
+            <p className="mt-1 text-xs text-gray-500">관리자가 비밀번호를 지정/변경하면 입주사는 다음 로그인 시 비밀번호를 다시 설정해야 합니다.</p>
           </div>
 
           <hr className="border-gray-200" />

@@ -10,6 +10,7 @@ import SettingsView from './components/SettingsView';
 import TenantDashboard from './components/TenantDashboard';
 import MeterUpload from './components/MeterUpload';
 import MyBillView from './components/MyBillView';
+import TenantPasswordSetup from './components/TenantPasswordSetup';
 import { Building2, LogOut, LayoutDashboard, Users, Gauge, Receipt, FileText, Settings, Home, Camera, CreditCard } from 'lucide-react';
 
 const ADMIN_TABS = [
@@ -55,7 +56,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (currentUser) loadSettings();
+    if (currentUser && !currentUser.mustChangePassword) loadSettings();
   }, [currentUser, loadSettings]);
 
   const handleLogin = (user) => {
@@ -72,6 +73,20 @@ export default function App() {
 
   if (!currentUser) {
     return <LoginForm onLogin={handleLogin} />;
+  }
+
+  if (currentUser.role === 'tenant' && currentUser.mustChangePassword) {
+    return (
+      <TenantPasswordSetup
+        onDone={() => {
+          const updated = { ...currentUser, mustChangePassword: false };
+          localStorage.setItem('rental_session', JSON.stringify(updated));
+          setCurrentUser(updated);
+          setActiveTab('home');
+          loadSettings();
+        }}
+      />
+    );
   }
 
   const isAdmin = currentUser.role === 'admin';
