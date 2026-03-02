@@ -714,6 +714,29 @@ const pool = new Pool({
     }
   });
 
+  app.delete("/monthly-bills", requireAdmin, async (req, res) => {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "삭제할 청구서 IDs가 필요합니다" });
+    }
+    const normalizedIds = ids
+      .map((v) => Number(v))
+      .filter((v) => Number.isInteger(v) && v > 0);
+    if (normalizedIds.length === 0) {
+      return res.status(400).json({ error: "유효한 IDs가 없습니다" });
+    }
+    try {
+      const { rowCount } = await pool.query(
+        "DELETE FROM monthly_bills WHERE id = ANY($1::int[])",
+        [normalizedIds]
+      );
+      return res.json({ success: true, deleted: rowCount });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
   // Generate monthly bills (auto-distribute utility costs)
   app.post("/monthly-bills/generate", requireAdmin, async (req, res) => {
     const { year, month } = req.body;
