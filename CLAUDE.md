@@ -275,3 +275,6 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v1.1 | 2026-02-26 | 입주사 settings 민감 정보 필터링 (sms_api_key, sms_sender_number) |
 | v1.2 | 2026-02-27 | 보안 강화: helmet, rate-limit, 세션 TTL 8시간, 업로드 검증(매직바이트+5MB), 파일명 sanitize |
 | v1.3 | 2026-02-27 | React ErrorBoundary 추가 (렌더링 에러 시 안내 UI) |
+| v1.4 | 2026-02-27 | 월별 청구서 일괄 삭제 API 추가 (DELETE /monthly-bills) |
+| v1.5 | 2026-02-27 | 입주사 최초 로그인 시 비밀번호 강제 변경 플로우 추가 |
+| v1.6 | 2026-03-02 | 공지사항 기능(관리자 등록·입주사 홈 표시), 비밀번호 설정 팝업 닫기·재오픈 버튼 |
