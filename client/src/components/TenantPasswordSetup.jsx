@@ -40,8 +40,8 @@ export default function TenantPasswordSetup({ onDone }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center px-4">
+      <div className="w-full max-w-sm bg-white rounded-xl shadow-xl border border-gray-200 p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-2">비밀번호 초기 설정</h2>
         <p className="text-sm text-gray-600 mb-5">최초 로그인입니다. 새 비밀번호를 설정해 주세요.</p>
         <form onSubmit={handleSubmit} className="space-y-3">
