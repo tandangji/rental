@@ -18,6 +18,12 @@ process.on("uncaughtException", (err) => {
 const app = express();
 const sessions = new Map();
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8시간
+const loginWindowMs = Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
+const loginMaxAttempts = Number(process.env.LOGIN_RATE_LIMIT_MAX) || 30;
+
+// nginx/ALB 뒤에서 실제 클라이언트 IP를 사용하도록 기본 신뢰 설정
+// (직접 노출 환경이면 TRUST_PROXY=false로 끌 수 있음)
+app.set("trust proxy", process.env.TRUST_PROXY === "false" ? false : 1);
 
 // 1시간마다 만료 세션 정리
 setInterval(() => {
@@ -217,11 +223,20 @@ const pool = new Pool({
 
   // ─── Auth Routes ──────────────────────────────────────────
   const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15분
-    max: 10,
+    windowMs: loginWindowMs,
+    max: loginMaxAttempts,
     message: { error: "너무 많은 로그인 시도입니다. 잠시 후 다시 시도하세요" },
     standardHeaders: true,
     legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    keyGenerator: (req) => {
+      const ip = req.ip || req.socket?.remoteAddress || "unknown-ip";
+      const body = req.body || {};
+      const account = body.isAdmin
+        ? "admin"
+        : String(body.companyName || "").trim().toLowerCase() || "tenant";
+      return `${ip}:${account}`;
+    },
   });
 
   // Login
