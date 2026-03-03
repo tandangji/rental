@@ -5,7 +5,7 @@ import { Save, Building2, CreditCard, MessageSquare, Bell } from 'lucide-react';
 const FIELDS = [
   { section: 'building', icon: Building2, title: '건물 정보', fields: [
     { key: 'building_name', label: '건물명' },
-    { key: 'landlord_name', label: '건물주명' },
+    { key: 'landlord_name', label: '관리자명' },
     { key: 'landlord_business_number', label: '사업자등록번호' },
     { key: 'landlord_phone', label: '연락처' },
   ]},

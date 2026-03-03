@@ -59,7 +59,7 @@ export default function LoginForm({ onLogin }) {
               mode === 'admin' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
             }`}
           >
-            건물주
+            관리자
           </button>
         </div>
 

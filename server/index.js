@@ -198,7 +198,7 @@ const pool = new Pool({
   // Insert default settings
   const defaultSettings = [
     ["building_name", "건물명"],
-    ["landlord_name", "건물주명"],
+    ["landlord_name", "관리자명"],
     ["landlord_business_number", ""],
     ["landlord_phone", ""],
     ["bank_name", ""],
@@ -267,8 +267,8 @@ const pool = new Pool({
         return res.status(401).json({ error: "관리자 비밀번호가 올바르지 않습니다" });
       }
       const token = crypto.randomUUID();
-      sessions.set(token, { id: "admin", name: "건물주", role: "admin", createdAt: Date.now() });
-      return res.json({ id: "admin", name: "건물주", role: "admin", token });
+      sessions.set(token, { id: "admin", name: "관리자", role: "admin", createdAt: Date.now() });
+      return res.json({ id: "admin", name: "관리자", role: "admin", token });
     }
 
     // Tenant login
@@ -1068,32 +1068,29 @@ const pool = new Pool({
   });
 
   // ─── Auto Bill Generation ─────────────────────────────────
-  // 각 입주사의 billing_day에 맞춰 임대료+관리비 자동 생성 (공과금은 제외)
+  // 매월 말일에 전체 활성 입주사의 다음달 임대료+관리비 자동 생성 (공과금은 수동 배분)
   async function autoGenerateRentBills() {
     try {
       // KST 기준 오늘 날짜
       const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-      const today = now.getDate();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1;
 
-      // 오늘이 billing_day인 활성 입주사만 조회
+      // 말일 체크: 내일이 1일이면 오늘이 말일
+      const tomorrow = new Date(now);
+      tomorrow.setDate(now.getDate() + 1);
+      if (tomorrow.getDate() !== 1) return;
+
+      // 다음 달 연/월 계산
+      let billYear = now.getFullYear();
+      let billMonth = now.getMonth() + 2; // getMonth()는 0-indexed → +1이 현재월, +2가 다음달
+      if (billMonth > 12) { billMonth = 1; billYear++; }
+
       const { rows: tenants } = await pool.query(
-        "SELECT * FROM tenants WHERE is_active = TRUE AND billing_day = $1",
-        [today]
+        "SELECT * FROM tenants WHERE is_active = TRUE"
       );
       if (tenants.length === 0) return;
 
       let created = 0;
       for (const t of tenants) {
-        // 선불: 당월 청구, 후불: 전월 청구
-        let billYear = year;
-        let billMonth = month;
-        if (t.payment_type === 'postpaid') {
-          billMonth = month - 1;
-          if (billMonth === 0) { billMonth = 12; billYear = year - 1; }
-        }
-
         const { rowCount } = await pool.query(
           `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee)
            VALUES ($1,$2,$3,$4,$5)
@@ -1103,15 +1100,14 @@ const pool = new Pool({
         if (rowCount > 0) created++;
       }
       if (created > 0) {
-        console.log(`[자동청구] 임대료/관리비 ${created}건 생성 (청구일: ${today}일)`);
+        console.log(`[자동청구] ${billYear}년 ${billMonth}월 임대료/관리비 ${created}건 생성`);
       }
     } catch (err) {
       console.error("[자동청구] 오류:", err.message);
     }
   }
 
-  // 서버 시작 시 한 번 실행 + 매일 00:05 KST (= 15:05 UTC) 실행
-  autoGenerateRentBills();
+  // 매일 00:05 KST (= 15:05 UTC) 실행 — 말일에만 실제 동작
   cron.schedule("5 15 * * *", () => {
     autoGenerateRentBills();
   });
