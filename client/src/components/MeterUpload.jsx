@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { API_BASE, authFetch, getToken } from '../utils/api';
 import { compressImage } from '../utils/imageCompress';
-import { Camera, Check, Upload, Flame, Zap, Droplets, AlertTriangle } from 'lucide-react';
+import { Camera, Check, Upload, Zap, Droplets, AlertTriangle } from 'lucide-react';
 
 const UTILITY_TYPES = [
-  { key: 'gas', label: '가스', icon: Flame, color: 'text-orange-500', bg: 'bg-orange-50' },
   { key: 'electricity', label: '전기', icon: Zap, color: 'text-yellow-500', bg: 'bg-yellow-50' },
   { key: 'water', label: '수도', icon: Droplets, color: 'text-blue-500', bg: 'bg-blue-50' },
 ];

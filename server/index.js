@@ -672,17 +672,17 @@ const pool = new Pool({
   });
 
   app.post("/building-bills", requireAdmin, async (req, res) => {
-    const { year, month, gas_total, electricity_total, water_total } = req.body;
+    const { year, month, electricity_total, water_total } = req.body;
     if (!year || !month) {
       return res.status(400).json({ error: "연도와 월은 필수입니다" });
     }
     try {
       const { rows } = await pool.query(
-        `INSERT INTO building_bills (year, month, gas_total, electricity_total, water_total)
-         VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (year, month) DO UPDATE SET gas_total=$3, electricity_total=$4, water_total=$5
+        `INSERT INTO building_bills (year, month, electricity_total, water_total)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (year, month) DO UPDATE SET electricity_total=$3, water_total=$4
          RETURNING id`,
-        [year, month, gas_total || 0, electricity_total || 0, water_total || 0]
+        [year, month, electricity_total || 0, water_total || 0]
       );
       res.json({ id: rows[0].id });
     } catch (err) {
@@ -752,16 +752,16 @@ const pool = new Pool({
 
       // Get building bills
       const { rows: bbRows } = await pool.query("SELECT * FROM building_bills WHERE year=$1 AND month=$2", [year, month]);
-      const buildingBill = bbRows[0] || { gas_total: 0, electricity_total: 0, water_total: 0 };
+      const buildingBill = bbRows[0] || { electricity_total: 0, water_total: 0 };
 
       // Distribute utility costs — reading_value를 해당 월 사용량으로 직접 사용
-      const utilityTypes = ["gas", "electricity", "water"];
-      const totalFields = { gas: "gas_total", electricity: "electricity_total", water: "water_total" };
-      const amountFields = { gas: "gas_amount", electricity: "electricity_amount", water: "water_amount" };
+      const utilityTypes = ["electricity", "water"];
+      const totalFields = { electricity: "electricity_total", water: "water_total" };
+      const amountFields = { electricity: "electricity_amount", water: "water_amount" };
 
       const distribution = {};
       tenants.forEach((t) => {
-        distribution[t.id] = { gas_amount: 0, electricity_amount: 0, water_amount: 0 };
+        distribution[t.id] = { electricity_amount: 0, water_amount: 0 };
       });
 
       for (const utype of utilityTypes) {
@@ -817,11 +817,11 @@ const pool = new Pool({
       for (const t of tenants) {
         const d = distribution[t.id];
         await pool.query(
-          `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee, gas_amount, electricity_amount, water_amount)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee, electricity_amount, water_amount)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
            ON CONFLICT (tenant_id, year, month) DO UPDATE SET
-             gas_amount=$6, electricity_amount=$7, water_amount=$8`,
-          [t.id, year, month, t.rent_amount, t.maintenance_fee, d.gas_amount, d.electricity_amount, d.water_amount]
+             electricity_amount=$6, water_amount=$7`,
+          [t.id, year, month, t.rent_amount, t.maintenance_fee, d.electricity_amount, d.water_amount]
         );
         updated++;
       }
@@ -835,7 +835,7 @@ const pool = new Pool({
   // Toggle payment status
   app.patch("/monthly-bills/:id/pay", requireAdmin, async (req, res) => {
     const { field } = req.body; // e.g. 'rent_paid', 'gas_paid', etc.
-    const validFields = ["rent_paid", "maintenance_paid", "gas_paid", "electricity_paid", "water_paid"];
+    const validFields = ["rent_paid", "maintenance_paid", "electricity_paid", "water_paid"];
     if (!validFields.includes(field)) {
       return res.status(400).json({ error: "잘못된 필드입니다" });
     }
@@ -861,7 +861,6 @@ const pool = new Pool({
   const ITEM_TYPES = [
     { type: "rent", name: "임대료", amountField: "rent_amount" },
     { type: "maintenance", name: "관리비", amountField: "maintenance_fee" },
-    { type: "gas", name: "가스", amountField: "gas_amount" },
     { type: "electricity", name: "전기", amountField: "electricity_amount" },
     { type: "water", name: "수도", amountField: "water_amount" },
   ];
@@ -872,7 +871,7 @@ const pool = new Pool({
       // 1) 월별 청구서 조회
       let billQuery = `
         SELECT mb.id as bill_id, mb.tenant_id, mb.year, mb.month,
-               mb.rent_amount, mb.maintenance_fee, mb.gas_amount, mb.electricity_amount, mb.water_amount,
+               mb.rent_amount, mb.maintenance_fee, mb.electricity_amount, mb.water_amount,
                t.floor, t.company_name, t.business_number, t.representative, t.address
         FROM monthly_bills mb
         JOIN tenants t ON mb.tenant_id = t.id WHERE 1=1`;
@@ -1040,7 +1039,7 @@ const pool = new Pool({
         `SELECT mb.*, t.floor, t.company_name, t.contact_phone FROM monthly_bills mb
          JOIN tenants t ON mb.tenant_id = t.id
          WHERE mb.year=$1 AND mb.month=$2
-         AND (mb.rent_paid = FALSE OR mb.maintenance_paid = FALSE OR mb.gas_paid = FALSE OR mb.electricity_paid = FALSE OR mb.water_paid = FALSE)`,
+         AND (mb.rent_paid = FALSE OR mb.maintenance_paid = FALSE OR mb.electricity_paid = FALSE OR mb.water_paid = FALSE)`,
         [year, month]
       );
 
@@ -1052,7 +1051,6 @@ const pool = new Pool({
         const unpaid = [];
         if (!b.rent_paid && b.rent_amount > 0) unpaid.push("임대료");
         if (!b.maintenance_paid && b.maintenance_fee > 0) unpaid.push("관리비");
-        if (!b.gas_paid && b.gas_amount > 0) unpaid.push("가스");
         if (!b.electricity_paid && b.electricity_amount > 0) unpaid.push("전기");
         if (!b.water_paid && b.water_amount > 0) unpaid.push("수도");
         return { floor: b.floor, company: b.company_name, phone: b.contact_phone, unpaid };

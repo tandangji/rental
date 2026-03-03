@@ -6,7 +6,6 @@ import { Download } from 'lucide-react';
 const ITEMS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount', dateField: 'rent_paid_date' },
   { field: 'maintenance_paid', label: '관리비', amountField: 'maintenance_fee', dateField: 'maintenance_paid_date' },
-  { field: 'gas_paid', label: '가스', amountField: 'gas_amount', dateField: 'gas_paid_date' },
   { field: 'electricity_paid', label: '전기', amountField: 'electricity_amount', dateField: 'electricity_paid_date' },
   { field: 'water_paid', label: '수도', amountField: 'water_amount', dateField: 'water_paid_date' },
 ];

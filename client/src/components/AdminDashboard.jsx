@@ -35,8 +35,8 @@ export default function AdminDashboard() {
 
   // Billing stats (부가세 10% 포함)
   const withVat = (n) => (n || 0) + Math.round((n || 0) * 0.1);
-  const payFields = ['rent_paid', 'maintenance_paid', 'gas_paid', 'electricity_paid', 'water_paid'];
-  const amtFields = ['rent_amount', 'maintenance_fee', 'gas_amount', 'electricity_amount', 'water_amount'];
+  const payFields = ['rent_paid', 'maintenance_paid', 'electricity_paid', 'water_paid'];
+  const amtFields = ['rent_amount', 'maintenance_fee', 'electricity_amount', 'water_amount'];
   const totalBilled = bills.reduce((s, b) => {
     return s + amtFields.reduce((ss, f) => ss + withVat(b[f]), 0);
   }, 0);
@@ -89,8 +89,8 @@ export default function AdminDashboard() {
                 <span className="text-sm text-gray-900">{t.company_name}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded ${photoCount >= 3 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                  사진 {photoCount}/3
+                <span className={`text-xs px-2 py-0.5 rounded ${photoCount >= 2 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                  사진 {photoCount}/2
                 </span>
                 {bill ? (
                   <span className={`text-xs px-2 py-0.5 rounded ${allPaid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>

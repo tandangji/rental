@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Save, Flame, Zap, Droplets, ChevronDown, ChevronUp } from 'lucide-react';
+import { Save, Zap, Droplets, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function BuildingBillForm({ year, month, onSaved }) {
-  const [form, setForm] = useState({ gas_total: 0, electricity_total: 0, water_total: 0 });
+  const [form, setForm] = useState({ electricity_total: 0, water_total: 0 });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [open, setOpen] = useState(true);
@@ -17,15 +17,14 @@ export default function BuildingBillForm({ year, month, onSaved }) {
           const data = await res.json();
           if (data.length > 0) {
             setForm({
-              gas_total: data[0].gas_total || 0,
               electricity_total: data[0].electricity_total || 0,
               water_total: data[0].water_total || 0,
             });
             // 이미 입력된 데이터가 있으면 접기
-            const hasData = (data[0].gas_total || 0) + (data[0].electricity_total || 0) + (data[0].water_total || 0) > 0;
+            const hasData = (data[0].electricity_total || 0) + (data[0].water_total || 0) > 0;
             setOpen(!hasData);
           } else {
-            setForm({ gas_total: 0, electricity_total: 0, water_total: 0 });
+            setForm({ electricity_total: 0, water_total: 0 });
             setOpen(true);
           }
         }
@@ -43,7 +42,6 @@ export default function BuildingBillForm({ year, month, onSaved }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           year, month,
-          gas_total: Number(form.gas_total),
           electricity_total: Number(form.electricity_total),
           water_total: Number(form.water_total),
         }),
@@ -62,10 +60,9 @@ export default function BuildingBillForm({ year, month, onSaved }) {
   };
 
   const fmt = (n) => Number(n || 0).toLocaleString();
-  const total = Number(form.gas_total) + Number(form.electricity_total) + Number(form.water_total);
+  const total = Number(form.electricity_total) + Number(form.water_total);
 
   const items = [
-    { key: 'gas_total', label: '가스', icon: Flame, color: 'text-orange-500' },
     { key: 'electricity_total', label: '전기', icon: Zap, color: 'text-yellow-500' },
     { key: 'water_total', label: '수도', icon: Droplets, color: 'text-blue-500' },
   ];

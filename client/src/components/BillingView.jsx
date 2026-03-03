@@ -6,7 +6,6 @@ import { FileText, MessageSquare } from 'lucide-react';
 const PAY_FIELDS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
   { field: 'maintenance_paid', label: '관리비', amountField: 'maintenance_fee' },
-  { field: 'gas_paid', label: '가스', amountField: 'gas_amount' },
   { field: 'electricity_paid', label: '전기', amountField: 'electricity_amount' },
   { field: 'water_paid', label: '수도', amountField: 'water_amount' },
 ];
