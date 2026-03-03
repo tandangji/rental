@@ -633,6 +633,21 @@ const pool = new Pool({
         [targetTenantId, year, month, utility_type, reading_value ?? null, photoBuf, safeName, now]
       );
       res.json({ id: rows[0].id });
+
+      // 사진 업로드 시 텔레그램 알림
+      if (photoBuf) {
+        const UTILITY_LABEL = { electricity: "⚡ 전기", water: "💧 수도" };
+        const { rows: tenantRows } = await pool.query(
+          "SELECT floor, company_name FROM tenants WHERE id = $1", [targetTenantId]
+        );
+        if (tenantRows.length > 0) {
+          const t = tenantRows[0];
+          const kstNow = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+          await sendTelegramAlert(
+            `📷 <b>검침 사진 업로드</b>\n📍 ${t.floor}층 ${t.company_name}\n${UTILITY_LABEL[utility_type] || utility_type}\n📅 ${year}년 ${month}월\n🕐 ${kstNow}`
+          );
+        }
+      }
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });
@@ -840,6 +855,10 @@ const pool = new Pool({
         updated++;
       }
       res.json({ created: updated, message: `${updated}건 공과금 배분 완료` });
+
+      await sendTelegramAlert(
+        `📋 <b>공과금 배분 완료</b>\n📅 ${year}년 ${month}월\n✅ ${updated}건 청구서 업데이트`
+      );
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });
@@ -1115,6 +1134,9 @@ const pool = new Pool({
       }
       if (created > 0) {
         console.log(`[자동청구] ${billYear}년 ${billMonth}월 임대료/관리비 ${created}건 생성`);
+        await sendTelegramAlert(
+          `📋 <b>청구서 자동발행</b>\n📅 ${billYear}년 ${billMonth}월\n✅ ${created}건 생성 (임대료 + 관리비)`
+        );
       }
     } catch (err) {
       console.error("[자동청구] 오류:", err.message);
@@ -1124,6 +1146,42 @@ const pool = new Pool({
   // 매일 00:05 KST (= 15:05 UTC) 실행 — 말일에만 실제 동작
   cron.schedule("5 15 * * *", () => {
     autoGenerateRentBills();
+  });
+
+  // 매일 09:00 KST (= 00:00 UTC) 미납 현황 알림
+  async function checkUnpaidAlert() {
+    try {
+      const { rows } = await pool.query(
+        `SELECT mb.year, mb.month, t.floor, t.company_name,
+                mb.rent_paid, mb.maintenance_paid, mb.electricity_paid, mb.water_paid,
+                mb.rent_amount, mb.maintenance_fee, mb.electricity_amount, mb.water_amount
+         FROM monthly_bills mb JOIN tenants t ON t.id = mb.tenant_id
+         WHERE (mb.rent_paid = FALSE OR mb.maintenance_paid = FALSE
+                OR mb.electricity_paid = FALSE OR mb.water_paid = FALSE)
+           AND (mb.rent_amount > 0 OR mb.maintenance_fee > 0 OR mb.electricity_amount > 0 OR mb.water_amount > 0)
+         ORDER BY mb.year DESC, mb.month DESC, t.floor ASC`
+      );
+      if (rows.length === 0) return;
+
+      const lines = [`💰 <b>미납 현황 (${rows.length}건)</b>`];
+      for (const b of rows) {
+        const unpaid = [];
+        if (!b.rent_paid && b.rent_amount > 0) unpaid.push("임대료");
+        if (!b.maintenance_paid && b.maintenance_fee > 0) unpaid.push("관리비");
+        if (!b.electricity_paid && b.electricity_amount > 0) unpaid.push("전기");
+        if (!b.water_paid && b.water_amount > 0) unpaid.push("수도");
+        if (unpaid.length > 0) {
+          lines.push(`📍 ${b.floor}층 ${b.company_name} (${b.year}/${String(b.month).padStart(2,"0")}) — ${unpaid.join(", ")}`);
+        }
+      }
+      await sendTelegramAlert(lines.join("\n"));
+    } catch (err) {
+      console.error("[미납알림] 오류:", err.message);
+    }
+  }
+
+  cron.schedule("0 0 * * *", () => {
+    checkUnpaidAlert();
   });
 
   // ─── Inquiries API ────────────────────────────────────────
