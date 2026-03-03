@@ -63,7 +63,9 @@ rental/
             ├── SettingsView.jsx       # 시스템 설정
             ├── TenantDashboard.jsx    # 입주사 홈 (계약정보+청구)
             ├── MyBillView.jsx         # 입주사 청구서 (PDF 다운로드)
-            └── BankInfo.jsx           # 입금 계좌 안내 (복사 기능)
+            ├── BankInfo.jsx           # 입금 계좌 안내 (복사 기능)
+            ├── InquiryForm.jsx        # 입주사 문의 제출
+            └── InquiryList.jsx        # 관리자 문의 목록 (처리 토글·삭제)
 ```
 
 ## 역할 & 권한
@@ -197,6 +199,14 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | GET | /tax-invoices | 인증 | 항목별 목록 |
 | PATCH | /tax-invoices/:billId/issue | admin | 발행 처리 (item_type 지정) |
 
+### 문의 (Inquiries)
+| Method | Path | 권한 | 설명 |
+|--------|------|------|------|
+| POST | /inquiries | tenant | 문의 제출 (텔레그램 알림 발송) |
+| GET | /inquiries | admin | 전체 목록 |
+| PATCH | /inquiries/:id/resolve | admin | 처리 상태 토글 |
+| DELETE | /inquiries/:id | admin | 삭제 |
+
 ### 설정 (requireAdmin)
 | Method | Path | 설명 |
 |--------|------|------|
@@ -279,3 +289,4 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v1.5 | 2026-02-27 | 입주사 최초 로그인 시 비밀번호 강제 변경 플로우 추가 |
 | v1.6 | 2026-03-02 | 공지사항 기능(관리자 등록·입주사 홈 표시), 비밀번호 설정 팝업 닫기·재오픈 버튼 |
 | v1.7 | 2026-03-03 | 가스비 전체 제거, 말일 자동청구(KST), 건물주→관리자, 계약정보 박스 제거, 하단 네비 다크 스타일 |
+| v1.8 | 2026-03-03 | 문의하기 기능(입주사 제출·관리자 목록·삭제·처리 토글), 텔레그램 알림(문의·검침·청구·미납) |
