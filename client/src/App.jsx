@@ -11,7 +11,9 @@ import TenantDashboard from './components/TenantDashboard';
 import MeterUpload from './components/MeterUpload';
 import MyBillView from './components/MyBillView';
 import TenantPasswordSetup from './components/TenantPasswordSetup';
-import { Building2, LogOut, LayoutDashboard, Users, Gauge, Receipt, FileText, Settings, Home, Camera, CreditCard, KeyRound } from 'lucide-react';
+import InquiryForm from './components/InquiryForm';
+import InquiryList from './components/InquiryList';
+import { Building2, LogOut, LayoutDashboard, Users, Gauge, Receipt, FileText, Settings, Home, Camera, CreditCard, KeyRound, MessageCircle } from 'lucide-react';
 
 const ADMIN_TABS = [
   { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
@@ -19,6 +21,7 @@ const ADMIN_TABS = [
   { id: 'meters', label: '검침', icon: Gauge },
   { id: 'billing', label: '청구', icon: Receipt },
   { id: 'tax', label: '세금계산서', icon: FileText },
+  { id: 'inquiries', label: '문의', icon: MessageCircle },
   { id: 'settings', label: '설정', icon: Settings },
 ];
 
@@ -26,6 +29,7 @@ const TENANT_TABS = [
   { id: 'home', label: '홈', icon: Home },
   { id: 'upload', label: '검침', icon: Camera },
   { id: 'bills', label: '청구서', icon: CreditCard },
+  { id: 'inquiry', label: '문의', icon: MessageCircle },
 ];
 
 export default function App() {
@@ -89,6 +93,7 @@ export default function App() {
         case 'meters': return <MeterOverview />;
         case 'billing': return <BillingView />;
         case 'tax': return <TaxInvoiceView />;
+        case 'inquiries': return <InquiryList />;
         case 'settings': return <SettingsView settings={settings} onSaved={loadSettings} />;
         default: return <AdminDashboard />;
       }
@@ -104,6 +109,7 @@ export default function App() {
         case 'home': return <TenantDashboard user={currentUser} settings={settings} />;
         case 'upload': return <MeterUpload user={currentUser} />;
         case 'bills': return <MyBillView user={currentUser} settings={settings} />;
+        case 'inquiry': return <InquiryForm user={currentUser} />;
         default: return <TenantDashboard user={currentUser} settings={settings} />;
       }
     }

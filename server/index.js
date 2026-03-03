@@ -238,6 +238,20 @@ const pool = new Pool({
   // 새 UNIQUE INDEX 생성
   try { await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_tax_inv_unique ON tax_invoices (tenant_id, year, month, item_type)"); } catch {}
 
+  // inquiries (문의/고장신고)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inquiries (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      floor INTEGER NOT NULL,
+      company_name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      content TEXT NOT NULL,
+      is_resolved BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   console.log("테이블 초기화 완료");
 
   // ─── Auth Routes ──────────────────────────────────────────
@@ -1110,6 +1124,80 @@ const pool = new Pool({
   // 매일 00:05 KST (= 15:05 UTC) 실행 — 말일에만 실제 동작
   cron.schedule("5 15 * * *", () => {
     autoGenerateRentBills();
+  });
+
+  // ─── Inquiries API ────────────────────────────────────────
+  async function sendTelegramAlert(message) {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID;
+    if (!token || !chatId) return;
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: "HTML" }),
+      });
+    } catch (err) {
+      console.error("[텔레그램] 알림 전송 실패:", err.message);
+    }
+  }
+
+  app.post("/inquiries", async (req, res) => {
+    if (req.user.role !== "tenant") {
+      return res.status(403).json({ error: "입주사 계정만 사용할 수 있습니다" });
+    }
+    const { category, content } = req.body || {};
+    if (!category || !String(content || "").trim()) {
+      return res.status(400).json({ error: "카테고리와 내용을 입력하세요" });
+    }
+    const validCategories = ["고장신고", "건의사항", "기타"];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({ error: "올바른 카테고리를 선택하세요" });
+    }
+    try {
+      const { rows: tenantRows } = await pool.query("SELECT floor, company_name FROM tenants WHERE id = $1", [req.user.id]);
+      if (tenantRows.length === 0) return res.status(404).json({ error: "입주사 정보를 찾을 수 없습니다" });
+      const { floor, company_name } = tenantRows[0];
+      const { rows } = await pool.query(
+        "INSERT INTO inquiries (tenant_id, floor, company_name, category, content) VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at",
+        [req.user.id, floor, company_name, category, String(content).trim()]
+      );
+      const now = new Date(rows[0].created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+      await sendTelegramAlert(`🔔 <b>새 문의 접수</b>\n📍 ${floor}층 ${company_name}\n📋 ${category}\n💬 ${String(content).trim()}\n🕐 ${now}`);
+      res.json({ id: rows[0].id });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  app.get("/inquiries", async (req, res) => {
+    try {
+      let query = "SELECT * FROM inquiries";
+      const params = [];
+      if (req.user.role === "tenant") {
+        query += " WHERE tenant_id = $1";
+        params.push(req.user.id);
+      }
+      query += " ORDER BY created_at DESC";
+      const { rows } = await pool.query(query, params);
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  app.patch("/inquiries/:id/resolve", requireAdmin, async (req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT is_resolved FROM inquiries WHERE id = $1", [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: "문의를 찾을 수 없습니다" });
+      await pool.query("UPDATE inquiries SET is_resolved = $1 WHERE id = $2", [!rows[0].is_resolved, req.params.id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
   });
 
   // ─── SPA Fallback ─────────────────────────────────────────
