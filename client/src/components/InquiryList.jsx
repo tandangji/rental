@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { CheckCircle, Circle } from 'lucide-react';
+import { CheckCircle, Circle, Trash2 } from 'lucide-react';
 
 const CATEGORY_COLOR = {
   '고장신고': 'bg-red-100 text-red-700',
@@ -24,6 +24,14 @@ export default function InquiryList() {
   const handleToggle = async (id) => {
     try {
       const res = await authFetch(`${API_BASE}/inquiries/${id}/resolve`, { method: 'PATCH' });
+      if (res.ok) load();
+    } catch {}
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('이 문의를 삭제하시겠습니까?')) return;
+    try {
+      const res = await authFetch(`${API_BASE}/inquiries/${id}`, { method: 'DELETE' });
       if (res.ok) load();
     } catch {}
   };
@@ -77,19 +85,27 @@ export default function InquiryList() {
                   {item.category}
                 </span>
               </div>
-              <button
-                onClick={() => handleToggle(item.id)}
-                className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg whitespace-nowrap border transition-colors ${
-                  item.is_resolved
-                    ? 'text-green-700 bg-green-50 border-green-200 hover:bg-green-100'
-                    : 'text-gray-500 bg-white border-gray-300 hover:border-blue-400'
-                }`}
-              >
-                {item.is_resolved
-                  ? <><CheckCircle className="w-3 h-3" /> 처리완료</>
-                  : <><Circle className="w-3 h-3" /> 미처리</>
-                }
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => handleToggle(item.id)}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg whitespace-nowrap border transition-colors ${
+                    item.is_resolved
+                      ? 'text-green-700 bg-green-50 border-green-200 hover:bg-green-100'
+                      : 'text-gray-500 bg-white border-gray-300 hover:border-blue-400'
+                  }`}
+                >
+                  {item.is_resolved
+                    ? <><CheckCircle className="w-3 h-3" /> 처리완료</>
+                    : <><Circle className="w-3 h-3" /> 미처리</>
+                  }
+                </button>
+                <button
+                  onClick={() => handleDelete(item.id)}
+                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-200 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
             <p className="text-sm text-gray-700 whitespace-pre-wrap">{item.content}</p>
             <p className="text-xs text-gray-400 mt-2">{fmt(item.created_at)}</p>

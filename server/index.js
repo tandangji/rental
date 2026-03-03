@@ -1200,6 +1200,17 @@ const pool = new Pool({
     }
   });
 
+  app.delete("/inquiries/:id", requireAdmin, async (req, res) => {
+    try {
+      const { rowCount } = await pool.query("DELETE FROM inquiries WHERE id = $1", [req.params.id]);
+      if (rowCount === 0) return res.status(404).json({ error: "문의를 찾을 수 없습니다" });
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
   // ─── SPA Fallback ─────────────────────────────────────────
   const indexPath = path.join(clientBuildPath, "index.html");
   app.get("/{*splat}", (req, res) => {
