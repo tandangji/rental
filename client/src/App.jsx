@@ -145,7 +145,7 @@ export default function App() {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30">
+      <nav className="fixed bottom-0 left-0 right-0 bg-gray-900 z-30">
         <div className="max-w-5xl mx-auto flex">
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -154,11 +154,14 @@ export default function App() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 flex flex-col items-center py-2 min-h-[56px] transition-colors ${
-                  isActive ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'
+                className={`flex-1 flex flex-col items-center py-2 min-h-[56px] transition-colors relative ${
+                  isActive ? 'text-white' : 'text-gray-500 hover:text-gray-300'
                 }`}
               >
-                <Icon className="w-5 h-5" />
+                {isActive && (
+                  <span className="absolute top-0 left-1/2 -translate-x-1/2 w-10 h-0.5 bg-blue-400 rounded-b-full" />
+                )}
+                <Icon className={`w-5 h-5 ${isActive ? 'text-blue-400' : ''}`} />
                 <span className="text-xs mt-1">{tab.label}</span>
               </button>
             );
