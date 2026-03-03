@@ -161,7 +161,7 @@ export default function App() {
                 {isActive && (
                   <span className="absolute top-0 left-1/2 -translate-x-1/2 w-10 h-0.5 bg-blue-400 rounded-b-full" />
                 )}
-                <Icon className={`w-5 h-5 ${isActive ? 'text-blue-400' : ''}`} />
+                <Icon className="w-5 h-5" />
                 <span className="text-xs mt-1">{tab.label}</span>
               </button>
             );
