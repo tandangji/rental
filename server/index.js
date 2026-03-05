@@ -1114,6 +1114,135 @@ const pool = new Pool({
     }
   });
 
+  // ─── Auto Utility Distribution ──────────────────────────────
+  // 검침 자동 배분: building_bills 미입력→스킵, reading 미입력→전월 1.5배
+  async function autoDistributeUtility(utilityType, year, month) {
+    const UTILITY_LABEL = { electricity: "⚡ 전기", water: "💧 수도" };
+    const totalField = utilityType === "electricity" ? "electricity_total" : "water_total";
+    const amountField = utilityType === "electricity" ? "electricity_amount" : "water_amount";
+    const label = UTILITY_LABEL[utilityType] || utilityType;
+
+    try {
+      // 1. building_bills에서 해당 월 총액 조회
+      const { rows: bbRows } = await pool.query(
+        "SELECT * FROM building_bills WHERE year=$1 AND month=$2", [year, month]
+      );
+      const totalCost = bbRows[0]?.[totalField] || 0;
+      if (totalCost === 0) {
+        console.log(`[자동배분] ${year}/${month} ${utilityType} — 건물 공과금 미입력, 스킵`);
+        await sendTelegramAlert(`⚠️ <b>${label} 건물 공과금 미입력</b>\n📅 ${year}년 ${month}월\n배분을 스킵합니다. 금액 입력 후 수동 배분해주세요.`);
+        return;
+      }
+
+      // 2. 활성 입주사 목록
+      const { rows: tenants } = await pool.query(
+        "SELECT * FROM tenants WHERE is_active = TRUE ORDER BY floor ASC"
+      );
+      if (tenants.length === 0) return;
+
+      // 3. 해당 월 사용량 조회
+      const { rows: currentReadings } = await pool.query(
+        "SELECT tenant_id, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
+        [year, month, utilityType]
+      );
+
+      // 4. 전월 사용량 조회 (수도: 2달 전 홀수달, 전기: 직전 달)
+      let prevYear = year, prevMonth;
+      if (utilityType === "water") {
+        prevMonth = month - 2; // 직전 홀수달
+      } else {
+        prevMonth = month - 1;
+      }
+      if (prevMonth <= 0) { prevMonth += 12; prevYear--; }
+
+      const { rows: prevReadings } = await pool.query(
+        "SELECT tenant_id, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
+        [prevYear, prevMonth, utilityType]
+      );
+
+      // 5. 사용량 결정: 미입력 → 전월 1.5배, 전월도 없으면 null(균등 배분)
+      const usages = [];
+      let totalUsage = 0;
+      const autoFilledTenants = [];
+
+      for (const t of tenants) {
+        const current = currentReadings.find((r) => r.tenant_id === t.id);
+        let usage = current?.reading_value != null ? parseFloat(current.reading_value) : null;
+
+        if (usage === null) {
+          const prev = prevReadings.find((r) => r.tenant_id === t.id);
+          if (prev?.reading_value != null) {
+            usage = Math.round(parseFloat(prev.reading_value) * 1.5 * 100) / 100;
+            autoFilledTenants.push(`${t.floor}층 ${t.company_name} (${usage})`);
+            // meter_readings에 자동값 기록
+            await pool.query(
+              `INSERT INTO meter_readings (tenant_id, year, month, utility_type, reading_value)
+               VALUES ($1,$2,$3,$4,$5)
+               ON CONFLICT (tenant_id, year, month, utility_type)
+               DO UPDATE SET reading_value = $5`,
+              [t.id, year, month, utilityType, usage]
+            );
+          }
+        }
+
+        usages.push({ tenantId: t.id, usage });
+        if (usage != null && usage > 0) totalUsage += usage;
+      }
+
+      // 6. 배분 계산
+      const distribution = {};
+      const validUsages = usages.filter((u) => u.usage !== null && u.usage > 0);
+
+      if (validUsages.length === 0) {
+        const share = Math.round(totalCost / tenants.length);
+        let allocated = 0;
+        tenants.forEach((t, idx) => {
+          if (idx === tenants.length - 1) {
+            distribution[t.id] = totalCost - allocated;
+          } else {
+            distribution[t.id] = share;
+            allocated += share;
+          }
+        });
+      } else {
+        let allocated = 0;
+        for (const t of tenants) distribution[t.id] = 0;
+        validUsages.forEach((u, idx) => {
+          if (idx === validUsages.length - 1) {
+            distribution[u.tenantId] = totalCost - allocated;
+          } else {
+            const amount = Math.round(totalCost * (u.usage / totalUsage));
+            distribution[u.tenantId] = amount;
+            allocated += amount;
+          }
+        });
+      }
+
+      // 7. monthly_bills UPSERT
+      let updated = 0;
+      for (const t of tenants) {
+        await pool.query(
+          `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee, ${amountField})
+           VALUES ($1,$2,$3,$4,$5,$6)
+           ON CONFLICT (tenant_id, year, month) DO UPDATE SET ${amountField}=$6`,
+          [t.id, year, month, t.rent_amount, t.maintenance_fee, distribution[t.id]]
+        );
+        updated++;
+      }
+
+      // 8. 텔레그램 알림
+      let msg = `📋 <b>${label} 자동 배분 완료</b>\n📅 ${year}년 ${month}월\n✅ ${updated}건 청구서 업데이트\n💰 총액: ${totalCost.toLocaleString()}원`;
+      if (autoFilledTenants.length > 0) {
+        msg += `\n⚠️ 미제출 1.5배 적용: ${autoFilledTenants.join(", ")}`;
+      }
+      await sendTelegramAlert(msg);
+      console.log(`[자동배분] ${year}/${month} ${utilityType} — ${updated}건 완료`);
+    } catch (err) {
+      console.error(`[자동배분] ${utilityType} 오류:`, err.message);
+      await sendTelegramAlert(`❌ <b>${label} 자동 배분 실패</b>\n📅 ${year}년 ${month}월\n오류: ${err.message}`);
+    }
+  }
+
   // ─── Auto Bill Generation ─────────────────────────────────
   // 매월 말일에 전체 활성 입주사의 다음달 임대료+관리비 자동 생성 (공과금은 수동 배분)
   async function autoGenerateRentBills() {
@@ -1157,10 +1286,28 @@ const pool = new Pool({
     }
   }
 
-  // 매일 00:05 KST (= 15:05 UTC) 실행 — 말일에만 실제 동작
+  // 매일 00:05 KST (= 15:05 UTC) 실행 — 말일에만 실제 동작 + 검침 자동 배분
   cron.schedule("5 15 * * *", () => {
     autoGenerateRentBills();
+    autoDistributeCheck();
   });
+
+  // 검침 자동 배분 체크 (매일 실행, 특정 날짜에만 동작)
+  async function autoDistributeCheck() {
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    const day = now.getDate();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+
+    // 매월 24일: 전기 자동 배분
+    if (day === 24) {
+      await autoDistributeUtility("electricity", year, month);
+    }
+    // 홀수달 8일: 수도 자동 배분
+    if (day === 8 && month % 2 === 1) {
+      await autoDistributeUtility("water", year, month);
+    }
+  }
 
   // 매일 09:00 KST (= 00:00 UTC) 미납 현황 알림
   async function checkUnpaidAlert() {

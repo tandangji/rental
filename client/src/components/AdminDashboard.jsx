@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Users, Receipt, Camera, AlertTriangle, Check, TrendingUp } from 'lucide-react';
+import { Users, Receipt, Camera, AlertTriangle, Check, TrendingUp, Zap, Droplets, Clock } from 'lucide-react';
 
 export default function AdminDashboard() {
   const now = new Date();
+  const kst = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
+  const kstDay = kst.getDate();
+  const kstMonth = kst.getMonth() + 1;
   const [tenants, setTenants] = useState([]);
   const [bills, setBills] = useState([]);
   const [readings, setReadings] = useState([]);
@@ -75,6 +78,47 @@ export default function AdminDashboard() {
             {sub && <p className="text-xs text-gray-400">{sub}</p>}
           </div>
         ))}
+      </div>
+
+      {/* 검침 기간 안내 */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+        <h3 className="font-semibold text-gray-900 text-sm mb-2 flex items-center gap-1.5">
+          <Clock className="w-4 h-4 text-gray-500" /> 검침 일정
+        </h3>
+        <div className="space-y-1.5 text-xs">
+          <div className="flex items-center gap-2">
+            <Zap className="w-3.5 h-3.5 text-yellow-500" />
+            <span className="text-gray-700">
+              전기: 매월 22~23일 업로드 → <b>24일 자동 배분</b>
+            </span>
+            {kstDay >= 22 && kstDay <= 23 ? (
+              <span className="ml-auto px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[10px] font-medium">진행 중</span>
+            ) : kstDay < 22 ? (
+              <span className="ml-auto px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px]">{22 - kstDay}일 후</span>
+            ) : kstDay === 24 ? (
+              <span className="ml-auto px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium">배분일</span>
+            ) : (
+              <span className="ml-auto px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px]">완료</span>
+            )}
+          </div>
+          {kstMonth % 2 === 1 && (
+            <div className="flex items-center gap-2">
+              <Droplets className="w-3.5 h-3.5 text-blue-500" />
+              <span className="text-gray-700">
+                수도: 홀수달 6~7일 업로드 → <b>8일 자동 배분</b>
+              </span>
+              {kstDay >= 6 && kstDay <= 7 ? (
+                <span className="ml-auto px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-medium">진행 중</span>
+              ) : kstDay < 6 ? (
+                <span className="ml-auto px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px]">{6 - kstDay}일 후</span>
+              ) : kstDay === 8 ? (
+                <span className="ml-auto px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium">배분일</span>
+              ) : (
+                <span className="ml-auto px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px]">완료</span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Quick tenant overview */}

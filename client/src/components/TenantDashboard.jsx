@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BankInfo from './BankInfo';
-import { Camera, AlertCircle, Bell } from 'lucide-react';
+import { Camera, AlertCircle, Bell, Zap, Droplets } from 'lucide-react';
 
 const ITEMS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
@@ -15,8 +15,13 @@ const withVat = (n) => (n || 0) + vat(n);
 
 export default function TenantDashboard({ user, settings }) {
   const now = new Date();
+  const kst = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
+  const kstDay = kst.getDate();
+  const kstMonth = kst.getMonth() + 1;
+  const isElecPeriod = kstDay >= 22 && kstDay <= 23;
+  const isWaterPeriod = kstMonth % 2 === 1 && kstDay >= 6 && kstDay <= 7;
   const [bill, setBill] = useState(null);
   const [readings, setReadings] = useState([]);
 
@@ -56,9 +61,28 @@ export default function TenantDashboard({ user, settings }) {
         </div>
       )}
 
+      {/* 검침일 알림 배너 */}
+      {isElecPeriod && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4 flex items-start gap-3">
+          <Zap className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-yellow-800 text-sm">오늘은 전기 검침일입니다!</p>
+            <p className="text-xs text-yellow-700 mt-0.5">검침 탭에서 전기 계량기 사진을 업로드해주세요.</p>
+          </div>
+        </div>
+      )}
+      {isWaterPeriod && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 flex items-start gap-3">
+          <Droplets className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-blue-800 text-sm">오늘은 수도 검침일입니다!</p>
+            <p className="text-xs text-blue-700 mt-0.5">검침 탭에서 수도 계량기 사진을 업로드해주세요.</p>
+          </div>
+        </div>
+      )}
+
       <h2 className="text-lg font-bold text-gray-900 mb-1">{user.name}</h2>
       <p className="text-sm text-gray-500 mb-4">{user.floor}층 · {year}년 {month}월</p>
-
 
       {/* Photo upload status */}
       {missingPhotos > 0 && (
@@ -144,8 +168,8 @@ export default function TenantDashboard({ user, settings }) {
         <p className="text-xs font-semibold text-gray-700 mb-1">유의사항</p>
         <ul className="text-xs text-gray-600 space-y-0.5 list-disc list-inside">
           <li>모든 금액은 부가세 10% 별도이며, 합계 금액으로 입금해주세요.</li>
-          <li>전기는 매월 21일에 검침 사진을 업로드해주세요.</li>
-          <li>수도는 홀수달(1,3,5,7,9,11월) 6일에 사진을 업로드해주세요.</li>
+          <li>전기는 매월 22~23일에 검침 사진을 업로드해주세요.</li>
+          <li>수도는 홀수달(1,3,5,7,9,11월) 6~7일에 사진을 업로드해주세요.</li>
           <li>수도세는 2개월치가 일괄 부과됩니다.</li>
           <li>검침사진 미제출 시 전월 사용량의 1.5배로 임시 부과됩니다.</li>
           <li>납부기한 경과 시에는 월 2%의 연체이자가 일수 계산으로 가산됩니다.</li>

@@ -1,12 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { API_BASE, authFetch, getToken } from '../utils/api';
 import { compressImage } from '../utils/imageCompress';
-import { Camera, Check, Upload, Zap, Droplets, AlertTriangle } from 'lucide-react';
+import { Camera, Check, Upload, Zap, Droplets, AlertTriangle, Info } from 'lucide-react';
 
 const ALL_UTILITY_TYPES = [
   { key: 'electricity', label: '전기', icon: Zap, color: 'text-yellow-500', bg: 'bg-yellow-50' },
   { key: 'water', label: '수도', icon: Droplets, color: 'text-blue-500', bg: 'bg-blue-50' },
 ];
+
+// KST 기준 현재 날짜
+function getKstNow() {
+  return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+}
+
+// 업로드 기간 체크
+function isUploadPeriod(utilityType) {
+  const kst = getKstNow();
+  const day = kst.getDate();
+  const month = kst.getMonth() + 1;
+  if (utilityType === 'electricity') return day >= 22 && day <= 23;
+  if (utilityType === 'water') return month % 2 === 1 && day >= 6 && day <= 7;
+  return false;
+}
 
 export default function MeterUpload({ user }) {
   const now = new Date();
@@ -16,6 +31,12 @@ export default function MeterUpload({ user }) {
   const [uploading, setUploading] = useState(null);
   const [message, setMessage] = useState('');
   const fileRefs = useRef({});
+
+  const kst = getKstNow();
+  const kstDay = kst.getDate();
+  const kstMonth = kst.getMonth() + 1;
+  const isElecPeriod = kstDay >= 22 && kstDay <= 23;
+  const isWaterPeriod = kstMonth % 2 === 1 && kstDay >= 6 && kstDay <= 7;
 
   const loadReadings = async () => {
     try {
@@ -33,7 +54,6 @@ export default function MeterUpload({ user }) {
     setUploading(utilityType);
     setMessage('');
     try {
-      // 이미지 압축 (1280px, JPEG 70%) — 5~10MB → 200~400KB
       const base64 = await compressImage(file);
       const res = await authFetch(`${API_BASE}/meter-readings`, {
         method: 'POST',
@@ -59,6 +79,9 @@ export default function MeterUpload({ user }) {
     }
   };
 
+  // 현재 선택된 월/년이 오늘 기준 현재월인지 체크 (기간 제한은 현재월에만 적용)
+  const isCurrentMonth = year === kst.getFullYear() && month === kstMonth;
+
   return (
     <div>
       <h2 className="text-lg font-bold text-gray-900 mb-4">계량기 사진 업로드</h2>
@@ -76,12 +99,26 @@ export default function MeterUpload({ user }) {
         </select>
       </div>
 
+      {/* 검침 기간 배너 */}
+      {isElecPeriod && (
+        <div className="mb-3 p-3 rounded-xl bg-yellow-50 border border-yellow-200 flex items-start gap-2">
+          <Zap className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-yellow-800 font-medium">전기 검침 기간입니다! 사진을 업로드해주세요.</p>
+        </div>
+      )}
+      {isWaterPeriod && (
+        <div className="mb-3 p-3 rounded-xl bg-blue-50 border border-blue-200 flex items-start gap-2">
+          <Droplets className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-blue-800 font-medium">수도 검침 기간입니다! 사진을 업로드해주세요.</p>
+        </div>
+      )}
+
       {/* 검침 안내 */}
       <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-2">
         <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
         <div className="text-xs text-amber-800">
-          <p className="font-semibold">전기는 매월 21일에 검침 사진을 업로드해주세요.</p>
-          <p className="mt-0.5">수도는 홀수달(1,3,5,7,9,11월) 6일에 사진을 업로드해주세요.</p>
+          <p className="font-semibold">전기는 매월 22~23일에 검침 사진을 업로드해주세요.</p>
+          <p className="mt-0.5">수도는 홀수달(1,3,5,7,9,11월) 6~7일에 사진을 업로드해주세요.</p>
           <p className="mt-0.5">수도세는 2개월치가 일괄 부과됩니다.</p>
           <p className="mt-0.5">검침사진 미제출 시 전월 사용량의 1.5배로 임시 부과됩니다.</p>
         </div>
@@ -95,6 +132,11 @@ export default function MeterUpload({ user }) {
         {ALL_UTILITY_TYPES.filter(u => u.key === 'electricity' || month % 2 === 1).map(({ key, label, icon: Icon, color, bg }) => {
           const reading = getReading(key);
           const hasPhoto = reading?.uploaded_at;
+          const canUpload = !isCurrentMonth || isUploadPeriod(key);
+          const disabledMsg = key === 'electricity'
+            ? '검침 기간은 매월 22~23일입니다'
+            : '검침 기간은 홀수달 6~7일입니다';
+
           return (
             <div key={key} className={`rounded-xl border-2 p-4 ${hasPhoto ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white'}`}>
               <div className="flex items-center justify-between">
@@ -110,6 +152,10 @@ export default function MeterUpload({ user }) {
                         <span className="text-gray-400 ml-1">
                           {new Date(reading.uploaded_at).toLocaleDateString('ko-KR')}
                         </span>
+                      </p>
+                    ) : !canUpload ? (
+                      <p className="text-xs text-gray-400 flex items-center gap-1">
+                        <Info className="w-3 h-3" /> {disabledMsg}
                       </p>
                     ) : (
                       <p className="text-xs text-gray-400">사진을 촬영해주세요</p>
@@ -128,11 +174,13 @@ export default function MeterUpload({ user }) {
                   />
                   <button
                     onClick={() => fileRefs.current[key]?.click()}
-                    disabled={uploading === key}
+                    disabled={uploading === key || !canUpload}
                     className={`flex items-center gap-1 px-3 py-2 text-sm rounded-lg min-h-[44px] ${
-                      hasPhoto
-                        ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                      !canUpload
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : hasPhoto
+                          ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
                     } disabled:opacity-50`}
                   >
                     {uploading === key ? (
@@ -140,7 +188,7 @@ export default function MeterUpload({ user }) {
                     ) : (
                       <Camera className="w-4 h-4" />
                     )}
-                    {hasPhoto ? '재업로드' : '촬영'}
+                    {!canUpload ? '기간 외' : hasPhoto ? '재업로드' : '촬영'}
                   </button>
                 </div>
               </div>

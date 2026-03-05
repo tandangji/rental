@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch, getToken } from '../utils/api';
-import { Zap, Droplets, Camera, Check, X, Eye, MessageSquare, Trash2 } from 'lucide-react';
+import { Zap, Droplets, Camera, Check, X, Eye, MessageSquare, Trash2, Clock } from 'lucide-react';
 
 const ALL_UTILITY_TYPES = [
   { key: 'electricity', label: '전기', unit: 'kWh', icon: Zap, color: 'text-yellow-500' },
@@ -107,8 +107,13 @@ export default function MeterOverview() {
         </div>
       </div>
 
-      <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-700 text-xs">
-        사진을 확인하고 각 층별 사용량을 입력하세요. 사용량 기준으로 공과금이 배분됩니다.
+      <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-700 text-xs space-y-1">
+        <p>사진을 확인하고 각 층별 사용량을 입력하세요. 사용량 기준으로 공과금이 배분됩니다.</p>
+        <p className="flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          <span><b>전기</b> 22~23일 업로드 → 24일 자동배분 | <b>수도</b> 홀수달 6~7일 업로드 → 8일 자동배분</span>
+        </p>
+        <p>미제출 입주사는 전월 사용량의 1.5배로 자동 적용됩니다.</p>
       </div>
 
       {smsResult && (
