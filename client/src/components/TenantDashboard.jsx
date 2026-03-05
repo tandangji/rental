@@ -17,8 +17,10 @@ export default function TenantDashboard({ user, settings }) {
   const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
   const kstDay = kst.getDate();
   const kstMonth = kst.getMonth() + 1;
-  const [year, setYear] = useState(kst.getFullYear());
-  const [month, setMonth] = useState(kstMonth);
+  const prevM = kstMonth === 1 ? 12 : kstMonth - 1;
+  const prevY = kstMonth === 1 ? kst.getFullYear() - 1 : kst.getFullYear();
+  const [year, setYear] = useState(prevY);
+  const [month, setMonth] = useState(prevM);
   const isCurrentMonth = year === kst.getFullYear() && month === kstMonth;
   const isElecPeriod = isCurrentMonth && kstDay >= 22 && kstDay <= 23;
   const isWaterPeriod = isCurrentMonth && kstMonth % 2 === 1 && kstDay >= 6 && kstDay <= 7;

@@ -15,8 +15,11 @@ const withVat = (n, noVat) => (n || 0) + vat(n, noVat);
 
 export default function MyBillView({ user, settings }) {
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  const kst = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+  const prevMonth = kst.getMonth() === 0 ? 12 : kst.getMonth(); // 전월 (0-indexed이므로 getMonth()가 전월)
+  const prevYear = kst.getMonth() === 0 ? kst.getFullYear() - 1 : kst.getFullYear();
+  const [year, setYear] = useState(prevYear);
+  const [month, setMonth] = useState(prevMonth);
   const [bills, setBills] = useState([]);
   const [downloading, setDownloading] = useState(false);
   const billRef = useRef(null);

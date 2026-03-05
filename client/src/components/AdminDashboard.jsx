@@ -5,8 +5,11 @@ import { Users, Receipt, Camera, AlertTriangle, Check, TrendingUp, Zap, Droplets
 export default function AdminDashboard() {
   const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
   const kstDay = kst.getDate();
-  const [year, setYear] = useState(kst.getFullYear());
-  const [month, setMonth] = useState(kst.getMonth() + 1);
+  const kstMonth = kst.getMonth() + 1;
+  const prevM = kstMonth === 1 ? 12 : kstMonth - 1;
+  const prevY = kstMonth === 1 ? kst.getFullYear() - 1 : kst.getFullYear();
+  const [year, setYear] = useState(prevY);
+  const [month, setMonth] = useState(prevM);
   const [tenants, setTenants] = useState([]);
   const [bills, setBills] = useState([]);
   const [readings, setReadings] = useState([]);
