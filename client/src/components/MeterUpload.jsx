@@ -3,7 +3,7 @@ import { API_BASE, authFetch, getToken } from '../utils/api';
 import { compressImage } from '../utils/imageCompress';
 import { Camera, Check, Upload, Zap, Droplets, AlertTriangle } from 'lucide-react';
 
-const UTILITY_TYPES = [
+const ALL_UTILITY_TYPES = [
   { key: 'electricity', label: '전기', icon: Zap, color: 'text-yellow-500', bg: 'bg-yellow-50' },
   { key: 'water', label: '수도', icon: Droplets, color: 'text-blue-500', bg: 'bg-blue-50' },
 ];
@@ -46,7 +46,7 @@ export default function MeterUpload({ user }) {
         }),
       });
       if (res.ok) {
-        setMessage(`${UTILITY_TYPES.find(u => u.key === utilityType).label} 사진 업로드 완료`);
+        setMessage(`${ALL_UTILITY_TYPES.find(u => u.key === utilityType).label} 사진 업로드 완료`);
         loadReadings();
       } else {
         const data = await res.json();
@@ -80,8 +80,10 @@ export default function MeterUpload({ user }) {
       <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-2">
         <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
         <div className="text-xs text-amber-800">
-          <p className="font-semibold">매월 22일까지 검침 사진을 업로드해주세요.</p>
-          <p className="mt-0.5">미제출 시 전월 사용량의 1.5배로 임시 부과됩니다.</p>
+          <p className="font-semibold">전기는 매월 21일에 검침 사진을 업로드해주세요.</p>
+          <p className="mt-0.5">수도는 홀수달(1,3,5,7,9,11월) 6일에 사진을 업로드해주세요.</p>
+          <p className="mt-0.5">수도세는 2개월치가 일괄 부과됩니다.</p>
+          <p className="mt-0.5">검침사진 미제출 시 전월 사용량의 1.5배로 임시 부과됩니다.</p>
         </div>
       </div>
 
@@ -90,7 +92,7 @@ export default function MeterUpload({ user }) {
       )}
 
       <div className="space-y-3">
-        {UTILITY_TYPES.map(({ key, label, icon: Icon, color, bg }) => {
+        {ALL_UTILITY_TYPES.filter(u => u.key === 'electricity' || month % 2 === 1).map(({ key, label, icon: Icon, color, bg }) => {
           const reading = getReading(key);
           const hasPhoto = reading?.uploaded_at;
           return (

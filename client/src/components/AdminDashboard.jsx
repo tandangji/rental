@@ -29,9 +29,14 @@ export default function AdminDashboard() {
   const fmt = (n) => (n || 0).toLocaleString();
 
   // Meter upload stats
-  const uploadedCount = new Set(readings.filter((r) => r.uploaded_at).map((r) => r.tenant_id)).size;
+  const isWaterMonth = month % 2 === 1;
+  const requiredPerTenant = isWaterMonth ? 2 : 1;
+  const fullyUploadedCount = activeTenants.filter((t) => {
+    const tenantUploads = readings.filter((r) => r.tenant_id === t.id && r.uploaded_at);
+    return tenantUploads.length >= requiredPerTenant;
+  }).length;
   const totalExpected = activeTenants.length;
-  const allUploaded = uploadedCount === totalExpected && totalExpected > 0;
+  const allUploaded = fullyUploadedCount === totalExpected && totalExpected > 0;
 
   // Billing stats (부가세 10% 포함)
   const withVat = (n) => (n || 0) + Math.round((n || 0) * 0.1);
@@ -49,7 +54,7 @@ export default function AdminDashboard() {
 
   const cards = [
     { label: '활성 입주사', value: activeTenants.length, sub: `총 ${tenants.length}개`, icon: Users, color: 'bg-blue-50 text-blue-600' },
-    { label: '사진 업로드', value: `${uploadedCount}/${totalExpected}`, sub: allUploaded ? '모두 완료' : '진행 중', icon: Camera, color: allUploaded ? 'bg-green-50 text-green-600' : 'bg-yellow-50 text-yellow-600' },
+    { label: '사진 업로드', value: `${fullyUploadedCount}/${totalExpected}`, sub: allUploaded ? '모두 완료' : '진행 중', icon: Camera, color: allUploaded ? 'bg-green-50 text-green-600' : 'bg-yellow-50 text-yellow-600' },
     { label: '이번 달 청구', value: bills.length > 0 ? `${fmt(totalBilled)}원` : '미생성', sub: bills.length > 0 ? `수납 ${fmt(totalPaid)}원` : '', icon: Receipt, color: 'bg-purple-50 text-purple-600' },
     { label: '미납', value: unpaidTenants > 0 ? `${unpaidTenants}건` : '없음', sub: unpaidTenants > 0 ? `${fmt(totalBilled - totalPaid)}원` : '', icon: unpaidTenants > 0 ? AlertTriangle : Check, color: unpaidTenants > 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600' },
   ];
@@ -89,8 +94,8 @@ export default function AdminDashboard() {
                 <span className="text-sm text-gray-900">{t.company_name}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded ${photoCount >= 2 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                  사진 {photoCount}/2
+                <span className={`text-xs px-2 py-0.5 rounded ${photoCount >= requiredPerTenant ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                  사진 {photoCount}/{requiredPerTenant}
                 </span>
                 {bill ? (
                   <span className={`text-xs px-2 py-0.5 rounded ${allPaid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>

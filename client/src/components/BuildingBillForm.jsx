@@ -43,7 +43,7 @@ export default function BuildingBillForm({ year, month, onSaved }) {
         body: JSON.stringify({
           year, month,
           electricity_total: Number(form.electricity_total),
-          water_total: Number(form.water_total),
+          water_total: isWaterMonth ? Number(form.water_total) : 0,
         }),
       });
       if (res.ok) {
@@ -60,12 +60,14 @@ export default function BuildingBillForm({ year, month, onSaved }) {
   };
 
   const fmt = (n) => Number(n || 0).toLocaleString();
-  const total = Number(form.electricity_total) + Number(form.water_total);
+  const isWaterMonth = month % 2 === 1;
+  const total = Number(form.electricity_total) + (isWaterMonth ? Number(form.water_total) : 0);
 
-  const items = [
+  const allItems = [
     { key: 'electricity_total', label: '전기', icon: Zap, color: 'text-yellow-500' },
     { key: 'water_total', label: '수도', icon: Droplets, color: 'text-blue-500' },
   ];
+  const items = isWaterMonth ? allItems : allItems.filter(i => i.key !== 'water_total');
 
   if (!loaded) return null;
 

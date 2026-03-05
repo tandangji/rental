@@ -784,13 +784,15 @@ const pool = new Pool({
       const buildingBill = bbRows[0] || { electricity_total: 0, water_total: 0 };
 
       // Distribute utility costs — reading_value를 해당 월 사용량으로 직접 사용
-      const utilityTypes = ["electricity", "water"];
+      // 홀수달: 전기+수도, 짝수달: 전기만
+      const isWaterMonth = month % 2 === 1;
+      const utilityTypes = isWaterMonth ? ["electricity", "water"] : ["electricity"];
       const totalFields = { electricity: "electricity_total", water: "water_total" };
       const amountFields = { electricity: "electricity_amount", water: "water_amount" };
 
       const distribution = {};
       tenants.forEach((t) => {
-        distribution[t.id] = { electricity_amount: 0, water_amount: 0 };
+        distribution[t.id] = { electricity_amount: 0, water_amount: isWaterMonth ? 0 : undefined };
       });
 
       for (const utype of utilityTypes) {
@@ -845,13 +847,23 @@ const pool = new Pool({
       let updated = 0;
       for (const t of tenants) {
         const d = distribution[t.id];
-        await pool.query(
-          `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee, electricity_amount, water_amount)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)
-           ON CONFLICT (tenant_id, year, month) DO UPDATE SET
-             electricity_amount=$6, water_amount=$7`,
-          [t.id, year, month, t.rent_amount, t.maintenance_fee, d.electricity_amount, d.water_amount]
-        );
+        if (isWaterMonth) {
+          await pool.query(
+            `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee, electricity_amount, water_amount)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
+             ON CONFLICT (tenant_id, year, month) DO UPDATE SET
+               electricity_amount=$6, water_amount=$7`,
+            [t.id, year, month, t.rent_amount, t.maintenance_fee, d.electricity_amount, d.water_amount]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee, electricity_amount, water_amount)
+             VALUES ($1,$2,$3,$4,$5,$6,0)
+             ON CONFLICT (tenant_id, year, month) DO UPDATE SET
+               electricity_amount=$6, water_amount=0`,
+            [t.id, year, month, t.rent_amount, t.maintenance_fee, d.electricity_amount]
+          );
+        }
         updated++;
       }
       res.json({ created: updated, message: `${updated}건 공과금 배분 완료` });
@@ -1037,9 +1049,11 @@ const pool = new Pool({
         uploadedMap[r.tenant_id].add(r.utility_type);
       });
 
+      // 홀수달: 전기+수도(2장), 짝수달: 전기만(1장)
+      const requiredCount = month % 2 === 1 ? 2 : 1;
       const targets = tenants.filter((t) => {
         const uploaded = uploadedMap[t.id];
-        return !uploaded || uploaded.size < 2;
+        return !uploaded || uploaded.size < requiredCount;
       });
 
       if (targets.length === 0) {
@@ -1051,7 +1065,7 @@ const pool = new Pool({
         floor: t.floor,
         company: t.company_name,
         phone: t.contact_phone,
-        missing: 2 - (uploadedMap[t.id]?.size || 0),
+        missing: requiredCount - (uploadedMap[t.id]?.size || 0),
       }));
 
       res.json({

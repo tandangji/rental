@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch, getToken } from '../utils/api';
 import { Zap, Droplets, Camera, Check, X, Eye, MessageSquare, Trash2 } from 'lucide-react';
 
-const UTILITY_TYPES = [
+const ALL_UTILITY_TYPES = [
   { key: 'electricity', label: '전기', unit: 'kWh', icon: Zap, color: 'text-yellow-500' },
   { key: 'water', label: '수도', unit: 'm³', icon: Droplets, color: 'text-blue-500' },
 ];
@@ -83,6 +83,8 @@ export default function MeterOverview() {
   };
 
   const activeTenants = tenants.filter((t) => t.is_active);
+  const isWaterMonth = month % 2 === 1;
+  const visibleTypes = isWaterMonth ? ALL_UTILITY_TYPES : ALL_UTILITY_TYPES.filter(u => u.key === 'electricity');
 
   return (
     <div>
@@ -134,8 +136,8 @@ export default function MeterOverview() {
               <span className="font-semibold text-gray-900 text-sm">{tenant.company_name}</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              {UTILITY_TYPES.map(({ key, label, unit, icon: Icon, color }) => {
+            <div className={`grid ${isWaterMonth ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
+              {visibleTypes.map(({ key, label, unit, icon: Icon, color }) => {
                 const reading = getReading(tenant.id, key);
                 const hasPhoto = !!reading?.uploaded_at;
                 const hasValue = reading?.reading_value != null;
