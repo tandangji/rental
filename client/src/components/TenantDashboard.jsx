@@ -50,10 +50,12 @@ export default function TenantDashboard({ user, settings }) {
   }, [year, month]);
 
   const fmt = (n) => (n || 0).toLocaleString();
-  const isWaterMonth = month % 2 === 1;
-  const requiredTypes = isWaterMonth ? ['electricity', 'water'] : ['electricity'];
   const uploadedTypes = new Set(readings.filter((r) => r.uploaded_at).map((r) => r.utility_type));
-  const missingPhotos = requiredTypes.filter(t => !uploadedTypes.has(t)).length;
+  // 검침 기간 중인 항목만 미업로드 경고 표시
+  const missingTypes = [];
+  if (isElecPeriod && !uploadedTypes.has('electricity')) missingTypes.push('electricity');
+  if (isWaterPeriod && !uploadedTypes.has('water')) missingTypes.push('water');
+  const missingPhotos = missingTypes.length;
 
   const totalWithVat = bill
     ? ITEMS.reduce((s, { amountField, noVat }) => s + withVat(bill[amountField], noVat), 0)
@@ -115,7 +117,7 @@ export default function TenantDashboard({ user, settings }) {
           <div>
             <p className="font-semibold text-yellow-800 text-sm">계량기 사진을 업로드해주세요</p>
             <p className="text-xs text-yellow-700 mt-1">
-              {requiredTypes.filter(t => !uploadedTypes.has(t)).map(t => t === 'electricity' ? '전기' : '수도').join(', ')} — {missingPhotos}건 미업로드
+              {missingTypes.map(t => t === 'electricity' ? '전기' : '수도').join(', ')} — {missingPhotos}건 미업로드
             </p>
           </div>
         </div>
