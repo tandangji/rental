@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Save, Building2, CreditCard, MessageSquare, Bell } from 'lucide-react';
+import { Save, Building2, CreditCard, MessageSquare, Bell, FileText } from 'lucide-react';
 
 const FIELDS = [
   { section: 'building', icon: Building2, title: '건물 정보', fields: [
@@ -13,6 +13,15 @@ const FIELDS = [
     { key: 'bank_name', label: '은행명' },
     { key: 'bank_account', label: '계좌번호' },
     { key: 'bank_holder', label: '예금주' },
+  ]},
+  { section: 'tax', icon: FileText, title: '세금계산서 공급자 정보', fields: [
+    { key: 'tax_supplier_company', label: '상호' },
+    { key: 'tax_supplier_name', label: '성명 (대표자)' },
+    { key: 'tax_supplier_biz_no', label: '사업자등록번호' },
+    { key: 'tax_supplier_address', label: '사업장 주소' },
+    { key: 'tax_supplier_business_type', label: '업태' },
+    { key: 'tax_supplier_business_item', label: '종목' },
+    { key: 'tax_supplier_email', label: '이메일' },
   ]},
   { section: 'sms', icon: MessageSquare, title: 'SMS 설정', fields: [
     { key: 'sms_api_key', label: 'API Key' },

@@ -40,48 +40,95 @@ export default function TaxInvoiceView() {
   const issued = invoices.filter((i) => i.is_issued);
   const filtered = tab === 'pending' ? pending : issued;
 
-  // ─── CSV Download (홈택스 일괄등록양식 — 항목별 1행) ────────
-  const downloadCSV = () => {
+  // ─── XLSX Download (홈택스 전자세금계산서 일괄등록양식) ────────
+  const downloadXLSX = async () => {
     if (pending.length === 0) return;
+    const XLSX = (await import('xlsx')).default || (await import('xlsx'));
 
-    const headers = [
-      '세금계산서종류', '작성일자', '공급자등록번호', '공급받는자등록번호',
-      '공급받는자상호', '공급받는자성명', '공급받는자주소',
-      '공급가액합계', '세액합계', '비고',
-      '품목일자1', '품목명1', '품목규격1', '품목수량1', '품목단가1', '품목공급가액1', '품목세액1', '품목비고1',
+    // 작성일자: 해당 월 말일
+    const lastDay = new Date(year, month, 0).getDate();
+    const dateStr = `${year}${String(month).padStart(2, '0')}${String(lastDay).padStart(2, '0')}`;
+    const dayStr = String(lastDay).padStart(2, '0');
+
+    // 공급자 정보
+    const s = settings;
+    const supplier = {
+      bizNo: (s.tax_supplier_biz_no || '').replace(/-/g, ''),
+      company: s.tax_supplier_company || '',
+      name: s.tax_supplier_name || '',
+      address: s.tax_supplier_address || '',
+      bizType: s.tax_supplier_business_type || '',
+      bizItem: s.tax_supplier_business_item || '',
+      email: s.tax_supplier_email || '',
+    };
+
+    // 입주사별 그룹핑 (수도 제외 — 면세)
+    const taxableItems = pending.filter((i) => i.item_type !== 'water');
+    const grouped = {};
+    taxableItems.forEach((inv) => {
+      const key = inv.tenant_id;
+      if (!grouped[key]) grouped[key] = { ...inv, items: [] };
+      grouped[key].items.push(inv);
+    });
+
+    // 5행 안내문 + 1행 헤더 + 데이터
+    const headerRows = [
+      ['엑셀 업로드 양식(전자세금계산서-일반(영세율)) - 100건 이하', ...Array(58).fill('')],
+      ['○ 필수항목(주황색)은 반드시 입력하셔야 합니다.', ...Array(58).fill('')],
+      ['○ 임의로 양식을 변경하는 경우 발급시 오류가 발생할 수 있으므로, 정해진 양식으로 작성하시기 바랍니다.', ...Array(58).fill('')],
+      ['○ 품목은 1건 이상 입력해야 합니다.', ...Array(58).fill('')],
+      ['○ 발급가능한 파일 확장자는 XLS, XLSX 입니다.', ...Array(58).fill('')],
+    ];
+    const colHeaders = [
+      '전자(세금)계산서 종류\r\n(01:일반, 02:영세율)', '작성일자',
+      '공급자 등록번호\r\n("-" 없이 입력)', '공급자\r\n 종사업장번호', '공급자 상호', '공급자 성명', '공급자 사업장주소', '공급자 업태', '공급자 종목', '공급자 이메일',
+      '공급받는자 등록번호\r\n("-" 없이 입력)', '공급받는자 \r\n종사업장번호', '공급받는자 상호', '공급받는자 성명', '공급받는자 사업장주소', '공급받는자 업태', '공급받는자 종목', '공급받는자 이메일1', '공급받는자 이메일2',
+      '공급가액\r\n합계', '세액\r\n합계', '비고',
+      '일자1\r\n(2자리, 작성년월 제외)', '품목1', '규격1', '수량1', '단가1', '공급가액1', '세액1', '품목비고1',
+      '일자2\r\n(2자리, 작성년월 제외)', '품목2', '규격2', '수량2', '단가2', '공급가액2', '세액2', '품목비고2',
+      '일자3\r\n(2자리, 작성년월 제외)', '품목3', '규격3', '수량3', '단가3', '공급가액3', '세액3', '품목비고3',
+      '일자4\r\n(2자리, 작성년월 제외)', '품목4', '규격4', '수량4', '단가4', '공급가액4', '세액4', '품목비고4',
+      '현금', '수표', '어음', '외상미수금', '영수(01),\r\n청구(02)',
     ];
 
-    const dateStr = `${year}${String(month).padStart(2, '0')}01`;
-    const supplierBizNo = (settings.landlord_business_number || '').replace(/-/g, '');
+    const dataRows = Object.values(grouped).map((g) => {
+      const buyerBizNo = (g.business_number || '').replace(/-/g, '');
+      const buyerCompany = g.tax_company_name || g.company_name;
+      const buyerName = g.tax_representative || g.representative;
+      const buyerAddr = g.tax_address || g.address;
+      const buyerBizType = g.tax_business_type || g.business_type || '';
+      const buyerBizItem = g.tax_business_item || g.business_item || '';
+      const buyerEmail1 = g.tax_email || g.email || '';
+      const buyerEmail2 = g.tax_email2 || '';
 
-    const rows = pending.map((inv) => {
-      const buyerBizNo = (inv.business_number || '').replace(/-/g, '');
+      const totalSupply = g.items.reduce((s, i) => s + i.supply_amount, 0);
+      const totalTax = g.items.reduce((s, i) => s + i.tax_amount, 0);
+
+      // 품목 슬롯 (최대 4개)
+      const itemSlots = [];
+      for (let i = 0; i < 4; i++) {
+        const item = g.items[i];
+        if (item) {
+          itemSlots.push(dayStr, `${month}월 ${item.item_name}`, '', '', '', item.supply_amount, item.tax_amount, '');
+        } else {
+          itemSlots.push('', '', '', '', '', '', '', '');
+        }
+      }
+
       return [
-        '01',
-        dateStr,
-        supplierBizNo,
-        buyerBizNo,
-        inv.company_name,
-        inv.representative,
-        inv.address,
-        inv.supply_amount,
-        inv.tax_amount,
-        `${year}년 ${month}월 ${inv.item_name}`,
-        dateStr, inv.item_name, '', '1', inv.supply_amount, inv.supply_amount, inv.tax_amount, '',
+        '01', dateStr,
+        supplier.bizNo, '', supplier.company, supplier.name, supplier.address, supplier.bizType, supplier.bizItem, supplier.email,
+        buyerBizNo, '', buyerCompany, buyerName, buyerAddr, buyerBizType, buyerBizItem, buyerEmail1, buyerEmail2,
+        totalSupply, totalTax, '',
+        ...itemSlots,
+        '', '', '', '', '02',
       ];
     });
 
-    const csvContent = '\uFEFF' + [headers, ...rows]
-      .map((row) => row.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
-      .join('\r\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `세금계산서_${year}년${month}월_발행대기.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const ws = XLSX.utils.aoa_to_sheet([...headerRows, colHeaders, ...dataRows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '엑셀업로드양식');
+    XLSX.writeFile(wb, `세금계산서_${year}년${month}월.xlsx`);
   };
 
   return (
@@ -125,10 +172,10 @@ export default function TaxInvoiceView() {
       {/* Download button */}
       {tab === 'pending' && pending.length > 0 && (
         <button
-          onClick={downloadCSV}
+          onClick={downloadXLSX}
           className="w-full flex items-center justify-center gap-2 py-2.5 mb-4 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 min-h-[44px]"
         >
-          <Download className="w-4 h-4" /> 홈택스 양식 다운로드 (CSV)
+          <Download className="w-4 h-4" /> 홈택스 양식 다운로드 (XLSX)
         </button>
       )}
 

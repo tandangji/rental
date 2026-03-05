@@ -128,6 +128,12 @@ const pool = new Pool({
     ALTER TABLE tenants ALTER COLUMN must_change_password SET NOT NULL
   `);
 
+  // 세금계산서 공급받는자 정보 (입주사 약식 정보와 별도 관리)
+  const taxCols = ['tax_company_name', 'tax_representative', 'tax_address', 'tax_business_type', 'tax_business_item', 'tax_email', 'tax_email2'];
+  for (const col of taxCols) {
+    await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS ${col} TEXT DEFAULT ''`);
+  }
+
   // monthly_bills
   await pool.query(`
     CREATE TABLE IF NOT EXISTS monthly_bills (
@@ -206,11 +212,37 @@ const pool = new Pool({
     ["bank_holder", ""],
     ["sms_api_key", ""],
     ["sms_sender_number", ""],
+    ["tax_supplier_company", "주식회사 엔피케이테크"],
+    ["tax_supplier_name", "남동우"],
+    ["tax_supplier_biz_no", "7438602924"],
+    ["tax_supplier_address", "경기도 남양주시 와부읍 수레로116번길 16, 2층 203호(아이비타워-2)"],
+    ["tax_supplier_business_type", "정보통신업"],
+    ["tax_supplier_business_item", "소프트웨어 개발 및 공급업"],
+    ["tax_supplier_email", ""],
   ];
   for (const [k, v] of defaultSettings) {
     await pool.query(
       "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
       [k, v]
+    );
+  }
+
+  // 세금계산서 공급받는자 정보 초기 세팅 (XLSX 템플릿 기준, 한번만 실행)
+  const taxBuyerSeed = [
+    { floor: 1, tax_company_name: '주식회사 신세계인터내셔널', tax_representative: '김덕주', tax_address: '서울특별시 강남구 도산대로 449(청담동)', tax_business_type: '도매업', tax_business_item: '무역, 의류', tax_email: 'smLee@sikorea.co.kr', tax_email2: 'k5junghee@sikorea.co.kr' },
+    { floor: 2, tax_company_name: '브이 모먼트 클리닉', tax_representative: '최승운', tax_address: '서울특별시 강남구 도산대로49길 22, 2층, 4층(신사동, 아가페 트리)', tax_business_type: '보건업', tax_business_item: '피부과, 성형외과', tax_email: 'beanchoi@naver.com', tax_email2: '' },
+    { floor: 3, tax_company_name: '주식회사 하이퍼코퍼레이션', tax_representative: '이상석', tax_address: '서울특별시 강남구 언주로 637, 15층(논현동, 싸이칸타워)', tax_business_type: '도소매, 서비스', tax_business_item: '컴퓨터주변기기, 별정통신', tax_email: 'info@hyper-corp.com', tax_email2: '' },
+    { floor: 4, tax_company_name: '브이 모먼트 클리닉', tax_representative: '최승운', tax_address: '서울특별시 강남구 도산대로49길 22, 2층, 4층(신사동, 아가페 트리)', tax_business_type: '보건업', tax_business_item: '피부과, 성형외과', tax_email: 'beanchoi@naver.com', tax_email2: '' },
+    { floor: 5, tax_company_name: '칼라빈', tax_representative: '서일주', tax_address: '', tax_business_type: '', tax_business_item: '', tax_email: 'tal222@daum.net', tax_email2: '' },
+    { floor: 6, tax_company_name: '주식회사 하이퍼코퍼레이션', tax_representative: '이상석', tax_address: '서울특별시 강남구 언주로 637, 15층(논현동, 싸이칸타워)', tax_business_type: '도소매, 서비스', tax_business_item: '컴퓨터주변기기, 별정통신', tax_email: 'info@hyper-corp.com', tax_email2: '' },
+    { floor: 7, tax_company_name: '바시필라테스', tax_representative: '차주한', tax_address: '서울특별시 강남구 도산대로49길 22, 7층(신사동, 아가페 트리)', tax_business_type: '서비스업', tax_business_item: '필라테스', tax_email: 'basiflexcha@gmail.com', tax_email2: '' },
+    { floor: 8, tax_company_name: '버터', tax_representative: '신나라', tax_address: '서울특별시 강남구 도산대로49길 22, 8층(신사동, 아가페 트리)', tax_business_type: '음식점업', tax_business_item: '기타 주점업', tax_email: 'inetjin@hanmail.net', tax_email2: '' },
+  ];
+  for (const d of taxBuyerSeed) {
+    await pool.query(
+      `UPDATE tenants SET tax_company_name=$1, tax_representative=$2, tax_address=$3, tax_business_type=$4, tax_business_item=$5, tax_email=$6, tax_email2=$7
+       WHERE floor=$8 AND tax_company_name=''`,
+      [d.tax_company_name, d.tax_representative, d.tax_address, d.tax_business_type, d.tax_business_item, d.tax_email, d.tax_email2, d.floor]
     );
   }
 
@@ -462,7 +494,7 @@ const pool = new Pool({
   });
 
   app.post("/tenants", requireAdmin, async (req, res) => {
-    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type } = req.body;
+    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2 } = req.body;
     if (!floor || !company_name) {
       return res.status(400).json({ error: "층수와 업체명은 필수입니다" });
     }
@@ -473,9 +505,9 @@ const pool = new Pool({
       }
       const pw = password || String(floor).padStart(4, "0");
       const { rows } = await pool.query(
-        `INSERT INTO tenants (floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, must_change_password)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,TRUE) RETURNING id`,
-        [floor, company_name, business_number || null, representative || null, business_type || null, business_item || null, address || null, contact_phone || null, email || null, pw, rent_amount || 0, maintenance_fee || 0, deposit_amount || 0, lease_start || null, lease_end || null, billing_day || 1, payment_type || 'prepaid']
+        `INSERT INTO tenants (floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, must_change_password, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,TRUE,$18,$19,$20,$21,$22,$23,$24) RETURNING id`,
+        [floor, company_name, business_number || null, representative || null, business_type || null, business_item || null, address || null, contact_phone || null, email || null, pw, rent_amount || 0, maintenance_fee || 0, deposit_amount || 0, lease_start || null, lease_end || null, billing_day || 1, payment_type || 'prepaid', tax_company_name || '', tax_representative || '', tax_address || '', tax_business_type || '', tax_business_item || '', tax_email || '', tax_email2 || '']
       );
       res.json({ id: rows[0].id });
     } catch (err) {
@@ -486,7 +518,7 @@ const pool = new Pool({
 
   app.put("/tenants/:id", requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, is_active, billing_day, payment_type } = req.body;
+    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, is_active, billing_day, payment_type, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2 } = req.body;
     try {
       // Check floor conflict
       if (floor) {
@@ -518,9 +550,16 @@ const pool = new Pool({
           lease_end = $15,
           is_active = COALESCE($16, is_active),
           billing_day = COALESCE($17, billing_day),
-          payment_type = COALESCE($18, payment_type)
-        WHERE id = $19`,
-        [floor, company_name, business_number ?? null, representative ?? null, business_type ?? null, business_item ?? null, address ?? null, contact_phone ?? null, email ?? null, password || "", rent_amount, maintenance_fee, deposit_amount, lease_start || null, lease_end || null, is_active, billing_day, payment_type, id]
+          payment_type = COALESCE($18, payment_type),
+          tax_company_name = COALESCE($19, tax_company_name),
+          tax_representative = COALESCE($20, tax_representative),
+          tax_address = COALESCE($21, tax_address),
+          tax_business_type = COALESCE($22, tax_business_type),
+          tax_business_item = COALESCE($23, tax_business_item),
+          tax_email = COALESCE($24, tax_email),
+          tax_email2 = COALESCE($25, tax_email2)
+        WHERE id = $26`,
+        [floor, company_name, business_number ?? null, representative ?? null, business_type ?? null, business_item ?? null, address ?? null, contact_phone ?? null, email ?? null, password || "", rent_amount, maintenance_fee, deposit_amount, lease_start || null, lease_end || null, is_active, billing_day, payment_type, tax_company_name ?? '', tax_representative ?? '', tax_address ?? '', tax_business_type ?? '', tax_business_item ?? '', tax_email ?? '', tax_email2 ?? '', id]
       );
       res.json({ success: true });
     } catch (err) {
@@ -997,7 +1036,10 @@ const pool = new Pool({
       let billQuery = `
         SELECT mb.id as bill_id, mb.tenant_id, mb.year, mb.month,
                mb.rent_amount, mb.maintenance_fee, mb.electricity_amount, mb.water_amount,
-               t.floor, t.company_name, t.business_number, t.representative, t.address
+               t.floor, t.company_name, t.business_number, t.representative, t.address,
+               t.business_type, t.business_item, t.email,
+               t.tax_company_name, t.tax_representative, t.tax_address,
+               t.tax_business_type, t.tax_business_item, t.tax_email, t.tax_email2
         FROM monthly_bills mb
         JOIN tenants t ON mb.tenant_id = t.id WHERE 1=1`;
       const params = [];
@@ -1045,6 +1087,16 @@ const pool = new Pool({
             business_number: bill.business_number || "",
             representative: bill.representative || "",
             address: bill.address || "",
+            business_type: bill.business_type || "",
+            business_item: bill.business_item || "",
+            email: bill.email || "",
+            tax_company_name: bill.tax_company_name || "",
+            tax_representative: bill.tax_representative || "",
+            tax_address: bill.tax_address || "",
+            tax_business_type: bill.tax_business_type || "",
+            tax_business_item: bill.tax_business_item || "",
+            tax_email: bill.tax_email || "",
+            tax_email2: bill.tax_email2 || "",
             item_type: type,
             item_name: name,
             supply_amount: amount,

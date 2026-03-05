@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { X } from 'lucide-react';
+import { X, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function TenantForm({ tenant, onClose, onSaved }) {
   const isEdit = !!tenant;
+  const [showTax, setShowTax] = useState(false);
   const [form, setForm] = useState({
     floor: tenant?.floor || '',
     company_name: tenant?.company_name || '',
@@ -21,6 +22,13 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
     lease_start: tenant?.lease_start?.slice(0, 10) || '',
     lease_end: tenant?.lease_end?.slice(0, 10) || '',
     is_active: tenant?.is_active ?? true,
+    tax_company_name: tenant?.tax_company_name || '',
+    tax_representative: tenant?.tax_representative || '',
+    tax_address: tenant?.tax_address || '',
+    tax_business_type: tenant?.tax_business_type || '',
+    tax_business_item: tenant?.tax_business_item || '',
+    tax_email: tenant?.tax_email || '',
+    tax_email2: tenant?.tax_email2 || '',
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -147,6 +155,51 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
               <input type="checkbox" checked={form.is_active} onChange={(e) => set('is_active', e.target.checked)} className="rounded border-gray-300" />
               <span className="text-sm text-gray-700">활성 상태</span>
             </label>
+          )}
+
+          <hr className="border-gray-200" />
+
+          {/* 세금계산서 공급받는자 정보 */}
+          <button type="button" onClick={() => setShowTax(!showTax)} className="w-full flex items-center justify-between text-sm font-medium text-gray-700">
+            <span>세금계산서 공급받는자 정보</span>
+            {showTax ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+          {showTax && (
+            <div className="space-y-3 p-3 bg-gray-50 rounded-lg">
+              <p className="text-xs text-gray-500">홈택스 세금계산서에 사용할 공급받는자 정보 (약식과 다를 경우 별도 입력)</p>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">상호</label>
+                <input type="text" value={form.tax_company_name} onChange={(e) => set('tax_company_name', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">성명 (대표자)</label>
+                  <input type="text" value={form.tax_representative} onChange={(e) => set('tax_representative', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">업태</label>
+                  <input type="text" value={form.tax_business_type} onChange={(e) => set('tax_business_type', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">종목</label>
+                  <input type="text" value={form.tax_business_item} onChange={(e) => set('tax_business_item', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">이메일 1</label>
+                  <input type="email" value={form.tax_email} onChange={(e) => set('tax_email', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">사업장 주소</label>
+                <input type="text" value={form.tax_address} onChange={(e) => set('tax_address', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">이메일 2</label>
+                <input type="email" value={form.tax_email2} onChange={(e) => set('tax_email2', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
+              </div>
+            </div>
           )}
 
           {error && <p className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">{error}</p>}
