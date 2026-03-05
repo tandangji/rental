@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BankInfo from './BankInfo';
-import { Camera, AlertCircle, Bell, Zap, Droplets } from 'lucide-react';
+import { Camera, AlertCircle, Bell, Zap, Droplets, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const ITEMS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
@@ -14,16 +14,25 @@ const vat = (n, noVat) => noVat ? 0 : Math.round((n || 0) * 0.1);
 const withVat = (n, noVat) => (n || 0) + vat(n, noVat);
 
 export default function TenantDashboard({ user, settings }) {
-  const now = new Date();
-  const kst = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
+  const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
   const kstDay = kst.getDate();
   const kstMonth = kst.getMonth() + 1;
-  const isElecPeriod = kstDay >= 22 && kstDay <= 23;
-  const isWaterPeriod = kstMonth % 2 === 1 && kstDay >= 6 && kstDay <= 7;
+  const [year, setYear] = useState(kst.getFullYear());
+  const [month, setMonth] = useState(kstMonth);
+  const isCurrentMonth = year === kst.getFullYear() && month === kstMonth;
+  const isElecPeriod = isCurrentMonth && kstDay >= 22 && kstDay <= 23;
+  const isWaterPeriod = isCurrentMonth && kstMonth % 2 === 1 && kstDay >= 6 && kstDay <= 7;
   const [bill, setBill] = useState(null);
   const [readings, setReadings] = useState([]);
+
+  const goMonth = (delta) => {
+    let m = month + delta;
+    let y = year;
+    if (m < 1) { m = 12; y--; }
+    if (m > 12) { m = 1; y++; }
+    setYear(y);
+    setMonth(m);
+  };
 
   useEffect(() => {
     (async () => {
@@ -36,7 +45,7 @@ export default function TenantDashboard({ user, settings }) {
         if (rRes.ok) setReadings(await rRes.json());
       } catch {}
     })();
-  }, []);
+  }, [year, month]);
 
   const fmt = (n) => (n || 0).toLocaleString();
   const isWaterMonth = month % 2 === 1;
@@ -81,8 +90,21 @@ export default function TenantDashboard({ user, settings }) {
         </div>
       )}
 
-      <h2 className="text-lg font-bold text-gray-900 mb-1">{user.name}</h2>
-      <p className="text-sm text-gray-500 mb-4">{user.floor}층 · {year}년 {month}월</p>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">{user.name}</h2>
+          <p className="text-sm text-gray-500">{user.floor}층</p>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => goMonth(-1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-sm font-medium text-gray-700 min-w-[90px] text-center">{year}년 {month}월</span>
+          <button onClick={() => goMonth(1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
 
       {/* Photo upload status */}
       {missingPhotos > 0 && (
@@ -109,7 +131,7 @@ export default function TenantDashboard({ user, settings }) {
       {bill ? (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
           <div className="text-center mb-4">
-            <p className="text-sm text-gray-500">이번 달 청구 금액 <span className="text-xs text-gray-400">(부가세 포함, 수도 면세)</span></p>
+            <p className="text-sm text-gray-500">{year}년 {month}월 청구 금액 <span className="text-xs text-gray-400">(부가세 포함, 수도 면세)</span></p>
             <p className="text-3xl font-bold text-gray-900 mt-1">
               {fmt(totalWithVat)}원
             </p>
@@ -156,7 +178,7 @@ export default function TenantDashboard({ user, settings }) {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center mb-4">
-          <p className="text-gray-400">이번 달 청구서가 아직 생성되지 않았습니다</p>
+          <p className="text-gray-400">{year}년 {month}월 청구서가 아직 생성되지 않았습니다</p>
         </div>
       )}
 
