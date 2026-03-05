@@ -99,6 +99,13 @@ rental/
 | billing_day | INTEGER | 청구일 (1~28) |
 | payment_type | TEXT | 납부방식 (prepaid/postpaid) |
 | is_active | BOOLEAN | 활성 여부 |
+| tax_company_name | TEXT | 세금계산서 공급받는자 상호 |
+| tax_representative | TEXT | 세금계산서 공급받는자 성명 |
+| tax_address | TEXT | 세금계산서 공급받는자 주소 |
+| tax_business_type | TEXT | 세금계산서 공급받는자 업태 |
+| tax_business_item | TEXT | 세금계산서 공급받는자 종목 |
+| tax_email | TEXT | 세금계산서 공급받는자 이메일1 |
+| tax_email2 | TEXT | 세금계산서 공급받는자 이메일2 |
 
 ### monthly_bills (월별 청구서)
 | 컬럼 | 타입 | 설명 |
@@ -153,7 +160,7 @@ rental/
 | UNIQUE INDEX(tenant_id, year, month, item_type) | | |
 
 ### settings (시스템 설정)
-key-value 구조: building_name, landlord_name, landlord_business_number, landlord_phone, bank_name, bank_account, bank_holder, sms_api_key, sms_sender_number
+key-value 구조: building_name, landlord_name, landlord_business_number, landlord_phone, bank_name, bank_account, bank_holder, sms_api_key, sms_sender_number, tax_supplier_company, tax_supplier_name, tax_supplier_biz_no, tax_supplier_address, tax_supplier_business_type, tax_supplier_business_item, tax_supplier_email
 
 ## API 엔드포인트
 
@@ -313,4 +320,5 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v1.7 | 2026-03-03 | 가스비 전체 제거, 말일 자동청구(KST), 건물주→관리자, 계약정보 박스 제거, 하단 네비 다크 스타일 |
 | v1.8 | 2026-03-03 | 문의하기 기능(입주사 제출·관리자 목록·삭제·처리 토글), 텔레그램 알림(문의·검침·청구·미납) |
 | v1.9 | 2026-03-05 | 검침 주기 차등화 — 전기 매월/수도 격월(홀수달), 짝수달 수도 UI 숨김, 유의사항 문구 업데이트 |
-| v2.0 | 2026-03-05 | 검침 자동화 워크플로우 — 업로드 기간 제한(전기 22~23일/수도 홀수달 6~7일), 자동 배분 cron(전기 24일/수도 8일), 미제출 1.5배 자동 적용, 검침일 배너 알림, 관리자 검침 일정 카드 |
+| v2.0 | 2026-03-05 | 검침 자동화 워크플로우 — 업로드 기간 제한(전기 22~23일/수도 홀수달 6~7일), 자동 배분 cron(전기 24일/수도 8일), 미제출 1.5배 자동 적용, 검침일 배너 알림, 관리자 검침 일정 카드, 수도세 면세 처리, 월 선택기, 기본월 전월 설정 |
+| v2.1 | 2026-03-05 | 홈택스 XLSX 세금계산서 — CSV→XLSX 변환(59컬럼 홈택스 양식), 공급자/공급받는자 정보 별도 관리(settings+tenants tax_*), 동적 월 품목명, 수도 면세 제외 |
