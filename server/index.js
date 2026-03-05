@@ -254,6 +254,51 @@ const pool = new Pool({
 
   console.log("테이블 초기화 완료");
 
+  // ─── One-time migration: 2026년 1월 공과금 데이터 ─────────
+  {
+    const jan2026Data = [
+      { floor: 1, electricity: 2027671, water: 39512 },
+      { floor: 2, electricity: 637666, water: 103718 },
+      { floor: 3, electricity: 829165, water: 29634 },
+      { floor: 4, electricity: 637666, water: 103718 },
+      { floor: 5, electricity: 556855, water: 750726 },
+      { floor: 6, electricity: 131745, water: 11648 },
+      { floor: 7, electricity: 156870, water: 29634 },
+      { floor: 8, electricity: 217108, water: 49390 },
+    ];
+    // building_bills 합계
+    await pool.query(
+      `INSERT INTO building_bills (year, month, electricity_total, water_total)
+       VALUES (2026, 1, 5194746, 1117980)
+       ON CONFLICT (year, month) DO NOTHING`
+    );
+    for (const d of jan2026Data) {
+      const { rows } = await pool.query(
+        "SELECT id, rent_amount, maintenance_fee FROM tenants WHERE floor = $1 AND is_active = TRUE", [d.floor]
+      );
+      if (rows.length === 0) continue;
+      const t = rows[0];
+      // monthly_bills: 전액 납부 완료 상태
+      await pool.query(
+        `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee, electricity_amount, water_amount,
+           rent_paid, maintenance_paid, electricity_paid, water_paid,
+           rent_paid_date, maintenance_paid_date, electricity_paid_date, water_paid_date)
+         VALUES ($1, 2026, 1, $2, $3, $4, $5,
+           TRUE, TRUE, TRUE, TRUE,
+           '2026-01-31', '2026-01-31', '2026-01-31', '2026-01-31')
+         ON CONFLICT (tenant_id, year, month) DO UPDATE SET
+           electricity_amount = $4, water_amount = $5,
+           rent_paid = TRUE, maintenance_paid = TRUE, electricity_paid = TRUE, water_paid = TRUE,
+           rent_paid_date = COALESCE(monthly_bills.rent_paid_date, '2026-01-31'),
+           maintenance_paid_date = COALESCE(monthly_bills.maintenance_paid_date, '2026-01-31'),
+           electricity_paid_date = COALESCE(monthly_bills.electricity_paid_date, '2026-01-31'),
+           water_paid_date = COALESCE(monthly_bills.water_paid_date, '2026-01-31')`,
+        [t.id, t.rent_amount, t.maintenance_fee, d.electricity, d.water]
+      );
+    }
+    console.log("2026년 1월 공과금 마이그레이션 완료");
+  }
+
   // ─── Auth Routes ──────────────────────────────────────────
   const loginLimiter = rateLimit({
     windowMs: loginWindowMs,
