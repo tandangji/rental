@@ -214,7 +214,7 @@ const pool = new Pool({
     );
   }
 
-  // tax_invoices (항목별 개별 발행: item_type = rent/maintenance/gas/electricity/water)
+  // tax_invoices (항목별 개별 발행: item_type = rent/maintenance/electricity/water)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tax_invoices (
       id SERIAL PRIMARY KEY,
@@ -1039,7 +1039,7 @@ const pool = new Pool({
 
       const targets = tenants.filter((t) => {
         const uploaded = uploadedMap[t.id];
-        return !uploaded || uploaded.size < 3;
+        return !uploaded || uploaded.size < 2;
       });
 
       if (targets.length === 0) {
@@ -1051,7 +1051,7 @@ const pool = new Pool({
         floor: t.floor,
         company: t.company_name,
         phone: t.contact_phone,
-        missing: 3 - (uploadedMap[t.id]?.size || 0),
+        missing: 2 - (uploadedMap[t.id]?.size || 0),
       }));
 
       res.json({

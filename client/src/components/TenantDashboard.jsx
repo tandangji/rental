@@ -65,7 +65,7 @@ export default function TenantDashboard({ user, settings }) {
           <div>
             <p className="font-semibold text-yellow-800 text-sm">계량기 사진을 업로드해주세요</p>
             <p className="text-xs text-yellow-700 mt-1">
-              {['가스', '전기', '수도'].filter((_, i) => !uploadedTypes.has(['gas', 'electricity', 'water'][i])).join(', ')} — {missingPhotos}건 미업로드
+              {['전기', '수도'].filter((_, i) => !uploadedTypes.has(['electricity', 'water'][i])).join(', ')} — {missingPhotos}건 미업로드
             </p>
           </div>
         </div>

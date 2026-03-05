@@ -1,7 +1,7 @@
 # 임대 관리 시스템 (rental)
 
 도산빌딩 임대료·관리비·공과금 관리 시스템.
-매월 계량기 사진 수집 → 사용량 비례 공과금 배분 → 항목별 납부 확인 → SMS 알림.
+매월 계량기 사진 수집 → 사용량 비례 공과금(전기/수도) 배분 → 항목별 납부 확인 → SMS 알림.
 
 ## 도메인 & 인프라
 
@@ -108,11 +108,11 @@ rental/
 | year, month | INTEGER | |
 | rent_amount | INTEGER | 임대료 |
 | maintenance_fee | INTEGER | 관리비 |
-| gas_amount | INTEGER | 가스 배분액 |
 | electricity_amount | INTEGER | 전기 배분액 |
 | water_amount | INTEGER | 수도 배분액 |
-| rent_paid ~ water_paid | BOOLEAN | 항목별 납부 여부 |
+| rent_paid, maintenance_paid, electricity_paid, water_paid | BOOLEAN | 항목별 납부 여부 |
 | rent_paid_date ~ water_paid_date | DATE | 납부일 |
+| ※ gas_amount, gas_paid, gas_paid_date 컬럼은 DB에 존재하지만 코드에서 미사용 (DEFAULT 0) |
 | UNIQUE(tenant_id, year, month) | | |
 
 ### meter_readings (계량기 검침)
@@ -121,7 +121,7 @@ rental/
 | id | SERIAL PK | |
 | tenant_id | FK → tenants | |
 | year, month | INTEGER | |
-| utility_type | TEXT | gas / electricity / water |
+| utility_type | TEXT | electricity / water |
 | reading_value | NUMERIC(12,2) | 사용량 (건물주 입력) |
 | photo | BYTEA | 계량기 사진 |
 | photo_filename | TEXT | |
@@ -133,8 +133,8 @@ rental/
 |------|------|------|
 | id | SERIAL PK | |
 | year, month | INTEGER | |
-| gas_total | INTEGER | 가스 총액 |
 | electricity_total | INTEGER | 전기 총액 |
+| ※ gas_total 컬럼은 DB에 존재하지만 코드에서 미사용 (DEFAULT 0) |
 | water_total | INTEGER | 수도 총액 |
 | UNIQUE(year, month) | | |
 
@@ -144,7 +144,7 @@ rental/
 | id | SERIAL PK | |
 | tenant_id | FK → tenants | |
 | year, month | INTEGER | |
-| item_type | TEXT | rent/maintenance/gas/electricity/water |
+| item_type | TEXT | rent/maintenance/electricity/water |
 | supply_amount | INTEGER | 공급가액 |
 | tax_amount | INTEGER | 세액 (supply × 0.1) |
 | total_amount | INTEGER | 총금액 |
@@ -247,7 +247,7 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 ```
 매월 1~5일: SMS 계량기 촬영 알림 발송
      ↓
-입주사: 계량기 사진 3장 업로드 (가스/전기/수도)
+입주사: 계량기 사진 2장 업로드 (전기/수도)
      ↓
 건물주: 사진 확인 → 사용량 입력
      ↓
