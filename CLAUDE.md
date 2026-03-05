@@ -232,7 +232,8 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 ## 부가세 처리
 
 - DB 저장 금액 = 공급가액 (부가세 미포함)
-- 부가세 = `Math.round(공급가액 × 0.1)`
+- 임대료·관리비·전기: 부가세 = `Math.round(공급가액 × 0.1)`
+- **수도: 면세 (부가세 0원)**
 - 합계 = 공급가액 + 부가세
 - 화면 표시: 합계(메인) + 공급가액/세액(소텍스트)
 

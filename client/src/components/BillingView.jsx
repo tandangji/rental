@@ -7,11 +7,11 @@ const PAY_FIELDS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
   { field: 'maintenance_paid', label: '관리비', amountField: 'maintenance_fee' },
   { field: 'electricity_paid', label: '전기', amountField: 'electricity_amount' },
-  { field: 'water_paid', label: '수도', amountField: 'water_amount' },
+  { field: 'water_paid', label: '수도', amountField: 'water_amount', noVat: true },
 ];
 
-const vatOf = (n) => Math.round((n || 0) * 0.1);
-const withVat = (n) => (n || 0) + vatOf(n);
+const vatOf = (n, noVat) => noVat ? 0 : Math.round((n || 0) * 0.1);
+const withVat = (n, noVat) => (n || 0) + vatOf(n, noVat);
 
 export default function BillingView() {
   const now = new Date();
@@ -81,11 +81,11 @@ export default function BillingView() {
   const fmt = (n) => (n || 0).toLocaleString();
 
   const totalAll = bills.reduce((s, b) => {
-    return s + PAY_FIELDS.reduce((ss, { amountField }) => ss + withVat(b[amountField]), 0);
+    return s + PAY_FIELDS.reduce((ss, { amountField, noVat }) => ss + withVat(b[amountField], noVat), 0);
   }, 0);
   const totalPaid = bills.reduce((s, b) => {
     let paid = 0;
-    PAY_FIELDS.forEach(({ field, amountField }) => { if (b[field]) paid += withVat(b[amountField]); });
+    PAY_FIELDS.forEach(({ field, amountField, noVat }) => { if (b[field]) paid += withVat(b[amountField], noVat); });
     return s + paid;
   }, 0);
 
@@ -157,7 +157,7 @@ export default function BillingView() {
       {/* Summary */}
       {bills.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-          <p className="text-xs text-gray-400 mb-2">부가세 10% 포함</p>
+          <p className="text-xs text-gray-400 mb-2">부가세 10% 포함 (수도 면세)</p>
           <div className="flex justify-between text-sm">
             <span className="text-gray-500">총 청구액</span>
             <span className="font-bold">{fmt(totalAll)}원</span>
@@ -176,7 +176,7 @@ export default function BillingView() {
       {/* Bill cards */}
       <div className="space-y-3">
         {bills.map((bill) => {
-          const totalWithVat = PAY_FIELDS.reduce((s, { amountField }) => s + withVat(bill[amountField]), 0);
+          const totalWithVat = PAY_FIELDS.reduce((s, { amountField, noVat }) => s + withVat(bill[amountField], noVat), 0);
           const allPaid = PAY_FIELDS.every(({ field, amountField }) => bill[amountField] === 0 || bill[field]);
           const paidCount = PAY_FIELDS.filter(({ field, amountField }) => bill[amountField] > 0 && bill[field]).length;
           const totalCount = PAY_FIELDS.filter(({ amountField }) => bill[amountField] > 0).length;
@@ -203,11 +203,11 @@ export default function BillingView() {
 
               {/* 항목 리스트 */}
               <div className="border border-gray-100 rounded-lg overflow-hidden">
-                {PAY_FIELDS.map(({ field, label, amountField }) => {
+                {PAY_FIELDS.map(({ field, label, amountField, noVat }) => {
                   const amount = bill[amountField];
                   if (amount === 0) return null;
                   const isPaid = bill[field];
-                  const v = vatOf(amount);
+                  const v = vatOf(amount, noVat);
                   const t = amount + v;
                   return (
                     <div key={field} className="flex items-center justify-between px-3 py-2.5 border-t border-gray-50 first:border-t-0">

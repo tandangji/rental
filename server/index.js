@@ -954,7 +954,7 @@ const pool = new Pool({
           const taxRecord = taxRecords.find((t) =>
             t.tenant_id === bill.tenant_id && t.year === bill.year && t.month === bill.month && t.item_type === type
           );
-          const taxAmount = Math.round(amount * 0.1);
+          const taxAmount = type === "water" ? 0 : Math.round(amount * 0.1);
           result.push({
             bill_id: bill.bill_id,
             tenant_id: bill.tenant_id,

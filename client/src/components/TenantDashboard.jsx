@@ -7,11 +7,11 @@ const ITEMS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
   { field: 'maintenance_paid', label: '관리비', amountField: 'maintenance_fee' },
   { field: 'electricity_paid', label: '전기', amountField: 'electricity_amount' },
-  { field: 'water_paid', label: '수도', amountField: 'water_amount' },
+  { field: 'water_paid', label: '수도', amountField: 'water_amount', noVat: true },
 ];
 
-const vat = (n) => Math.round((n || 0) * 0.1);
-const withVat = (n) => (n || 0) + vat(n);
+const vat = (n, noVat) => noVat ? 0 : Math.round((n || 0) * 0.1);
+const withVat = (n, noVat) => (n || 0) + vat(n, noVat);
 
 export default function TenantDashboard({ user, settings }) {
   const now = new Date();
@@ -45,7 +45,7 @@ export default function TenantDashboard({ user, settings }) {
   const missingPhotos = requiredTypes.filter(t => !uploadedTypes.has(t)).length;
 
   const totalWithVat = bill
-    ? ITEMS.reduce((s, { amountField }) => s + withVat(bill[amountField]), 0)
+    ? ITEMS.reduce((s, { amountField, noVat }) => s + withVat(bill[amountField], noVat), 0)
     : 0;
 
   return (
@@ -109,18 +109,18 @@ export default function TenantDashboard({ user, settings }) {
       {bill ? (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
           <div className="text-center mb-4">
-            <p className="text-sm text-gray-500">이번 달 청구 금액 <span className="text-xs text-gray-400">(부가세 포함)</span></p>
+            <p className="text-sm text-gray-500">이번 달 청구 금액 <span className="text-xs text-gray-400">(부가세 포함, 수도 면세)</span></p>
             <p className="text-3xl font-bold text-gray-900 mt-1">
               {fmt(totalWithVat)}원
             </p>
           </div>
 
           <div className="space-y-3">
-            {ITEMS.map(({ field, label, amountField }) => {
+            {ITEMS.map(({ field, label, amountField, noVat }) => {
               const amount = bill[amountField];
               if (amount === 0) return null;
               const isPaid = bill[field];
-              const vatAmt = vat(amount);
+              const vatAmt = vat(amount, noVat);
               const total = amount + vatAmt;
               return (
                 <div key={field} className="border-b border-gray-50 last:border-0 pb-2 last:pb-0">
@@ -167,7 +167,7 @@ export default function TenantDashboard({ user, settings }) {
       <div className="mt-4 p-3 rounded-lg bg-gray-50 border border-gray-200">
         <p className="text-xs font-semibold text-gray-700 mb-1">유의사항</p>
         <ul className="text-xs text-gray-600 space-y-0.5 list-disc list-inside">
-          <li>모든 금액은 부가세 10% 별도이며, 합계 금액으로 입금해주세요.</li>
+          <li>임대료·관리비·전기는 부가세 10% 별도이며, 수도세는 면세입니다.</li>
           <li>전기는 매월 22~23일에 검침 사진을 업로드해주세요.</li>
           <li>수도는 홀수달(1,3,5,7,9,11월) 6~7일에 사진을 업로드해주세요.</li>
           <li>수도세는 2개월치가 일괄 부과됩니다.</li>

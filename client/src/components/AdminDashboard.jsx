@@ -41,16 +41,17 @@ export default function AdminDashboard() {
   const totalExpected = activeTenants.length;
   const allUploaded = fullyUploadedCount === totalExpected && totalExpected > 0;
 
-  // Billing stats (부가세 10% 포함)
-  const withVat = (n) => (n || 0) + Math.round((n || 0) * 0.1);
+  // Billing stats (부가세 10% 포함, 수도세 면세)
+  const withVat = (n, noVat) => (n || 0) + (noVat ? 0 : Math.round((n || 0) * 0.1));
   const payFields = ['rent_paid', 'maintenance_paid', 'electricity_paid', 'water_paid'];
   const amtFields = ['rent_amount', 'maintenance_fee', 'electricity_amount', 'water_amount'];
+  const noVatFlags = [false, false, false, true]; // 수도만 면세
   const totalBilled = bills.reduce((s, b) => {
-    return s + amtFields.reduce((ss, f) => ss + withVat(b[f]), 0);
+    return s + amtFields.reduce((ss, f, i) => ss + withVat(b[f], noVatFlags[i]), 0);
   }, 0);
   const totalPaid = bills.reduce((s, b) => {
     let p = 0;
-    payFields.forEach((f, i) => { if (b[f]) p += withVat(b[amtFields[i]]); });
+    payFields.forEach((f, i) => { if (b[f]) p += withVat(b[amtFields[i]], noVatFlags[i]); });
     return s + p;
   }, 0);
   const unpaidTenants = bills.filter((b) => !payFields.every((f, i) => b[amtFields[i]] === 0 || b[f])).length;

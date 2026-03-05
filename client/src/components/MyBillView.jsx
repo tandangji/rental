@@ -7,11 +7,11 @@ const ITEMS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount', dateField: 'rent_paid_date' },
   { field: 'maintenance_paid', label: '관리비', amountField: 'maintenance_fee', dateField: 'maintenance_paid_date' },
   { field: 'electricity_paid', label: '전기', amountField: 'electricity_amount', dateField: 'electricity_paid_date' },
-  { field: 'water_paid', label: '수도', amountField: 'water_amount', dateField: 'water_paid_date' },
+  { field: 'water_paid', label: '수도', amountField: 'water_amount', dateField: 'water_paid_date', noVat: true },
 ];
 
-const vat = (n) => Math.round((n || 0) * 0.1);
-const withVat = (n) => (n || 0) + vat(n);
+const vat = (n, noVat) => noVat ? 0 : Math.round((n || 0) * 0.1);
+const withVat = (n, noVat) => (n || 0) + vat(n, noVat);
 
 export default function MyBillView({ user, settings }) {
   const now = new Date();
@@ -35,7 +35,7 @@ export default function MyBillView({ user, settings }) {
   const fmt = (n) => (n || 0).toLocaleString();
 
   const totalWithVat = bill
-    ? ITEMS.reduce((s, { amountField }) => s + withVat(bill[amountField]), 0)
+    ? ITEMS.reduce((s, { amountField, noVat }) => s + withVat(bill[amountField], noVat), 0)
     : 0;
 
   const handleDownloadPDF = async () => {
@@ -97,18 +97,18 @@ export default function MyBillView({ user, settings }) {
         <>
           <div ref={billRef} className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
             <div className="text-center mb-4">
-              <p className="text-sm text-gray-500">{year}년 {month}월 <span className="text-xs text-gray-400">(부가세 포함)</span></p>
+              <p className="text-sm text-gray-500">{year}년 {month}월 <span className="text-xs text-gray-400">(부가세 포함, 수도 면세)</span></p>
               <p className="text-3xl font-bold text-gray-900 mt-1">
                 {fmt(totalWithVat)}원
               </p>
             </div>
 
             <div className="space-y-3">
-              {ITEMS.map(({ field, label, amountField, dateField }) => {
+              {ITEMS.map(({ field, label, amountField, dateField, noVat }) => {
                 const amount = bill[amountField];
                 if (amount === 0) return null;
                 const isPaid = bill[field];
-                const vatAmt = vat(amount);
+                const vatAmt = vat(amount, noVat);
                 const total = amount + vatAmt;
                 return (
                   <div key={field} className="border-b border-gray-50 last:border-0 pb-2 last:pb-0">
