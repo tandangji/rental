@@ -3,12 +3,10 @@ import { API_BASE, authFetch } from '../utils/api';
 import { Users, Receipt, Camera, AlertTriangle, Check, TrendingUp, Zap, Droplets, Clock } from 'lucide-react';
 
 export default function AdminDashboard() {
-  const now = new Date();
-  const kst = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
+  const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+  const year = kst.getFullYear();
+  const month = kst.getMonth() + 1;
   const kstDay = kst.getDate();
-  const kstMonth = kst.getMonth() + 1;
   const [tenants, setTenants] = useState([]);
   const [bills, setBills] = useState([]);
   const [readings, setReadings] = useState([]);
@@ -102,7 +100,7 @@ export default function AdminDashboard() {
               <span className="ml-auto px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px]">완료</span>
             )}
           </div>
-          {kstMonth % 2 === 1 && (
+          {month % 2 === 1 && (
             <div className="flex items-center gap-2">
               <Droplets className="w-3.5 h-3.5 text-blue-500" />
               <span className="text-gray-700">
