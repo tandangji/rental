@@ -877,6 +877,41 @@ const pool = new Pool({
     }
   });
 
+  // 임대료/관리비 수동 발행 (자동 cron 누락 시 fallback)
+  app.post("/monthly-bills/generate-rent", requireAdmin, async (req, res) => {
+    const { year, month } = req.body;
+    if (!year || !month) {
+      return res.status(400).json({ error: "연도와 월은 필수입니다" });
+    }
+    try {
+      const { rows: tenants } = await pool.query(
+        "SELECT * FROM tenants WHERE is_active = TRUE"
+      );
+      if (tenants.length === 0) {
+        return res.status(400).json({ error: "활성 입주사가 없습니다" });
+      }
+      let created = 0;
+      for (const t of tenants) {
+        const { rowCount } = await pool.query(
+          `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee)
+           VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (tenant_id, year, month) DO NOTHING`,
+          [t.id, year, month, t.rent_amount, t.maintenance_fee]
+        );
+        if (rowCount > 0) created++;
+      }
+      res.json({ created, message: created > 0 ? `${created}건 임대료/관리비 발행 완료` : "이미 발행된 청구서가 있습니다" });
+      if (created > 0) {
+        await sendTelegramAlert(
+          `📋 <b>임대료/관리비 수동 발행</b>\n📅 ${year}년 ${month}월\n✅ ${created}건 생성`
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
   // Toggle payment status
   app.patch("/monthly-bills/:id/pay", requireAdmin, async (req, res) => {
     const { field } = req.body; // e.g. 'rent_paid', 'gas_paid', etc.

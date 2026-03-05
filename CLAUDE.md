@@ -191,6 +191,7 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 |--------|------|------|------|
 | GET | /monthly-bills | 인증 | 목록 |
 | POST | /monthly-bills/generate | admin | 공과금 배분 + 청구서 생성 |
+| POST | /monthly-bills/generate-rent | admin | 임대료/관리비 수동 발행 (cron 누락 시 fallback) |
 | PATCH | /monthly-bills/:id/pay | admin | 납부 확인 토글 |
 
 ### 세금계산서

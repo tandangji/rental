@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BuildingBillForm from './BuildingBillForm';
-import { FileText, MessageSquare } from 'lucide-react';
+import { FileText, MessageSquare, Plus } from 'lucide-react';
 
 const PAY_FIELDS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
@@ -19,6 +19,7 @@ export default function BillingView() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [bills, setBills] = useState([]);
   const [generating, setGenerating] = useState(false);
+  const [generatingRent, setGeneratingRent] = useState(false);
   const [message, setMessage] = useState('');
   const [smsResult, setSmsResult] = useState(null);
 
@@ -52,6 +53,27 @@ export default function BillingView() {
       setMessage('배분 실패');
     } finally {
       setGenerating(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
+  const handleGenerateRent = async () => {
+    if (!confirm(`${year}년 ${month}월 임대료/관리비를 발행하시겠습니까?`)) return;
+    setGeneratingRent(true);
+    setMessage('');
+    try {
+      const res = await authFetch(`${API_BASE}/monthly-bills/generate-rent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year, month }),
+      });
+      const data = await res.json();
+      setMessage(data.message || data.error);
+      if (res.ok) loadBills();
+    } catch {
+      setMessage('발행 실패');
+    } finally {
+      setGeneratingRent(false);
       setTimeout(() => setMessage(''), 5000);
     }
   };
@@ -117,8 +139,15 @@ export default function BillingView() {
         임대료/관리비는 각 입주사의 청구일에 자동 생성됩니다. 건물 공과금 입력 후 공과금 배분을 실행하세요.
       </div>
 
-      {/* Generate button */}
+      {/* Generate buttons */}
       <div className="flex gap-2 mb-4">
+        <button
+          onClick={handleGenerateRent}
+          disabled={generatingRent}
+          className="flex items-center justify-center gap-1 px-3 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
+        >
+          <Plus className="w-4 h-4" /> {generatingRent ? '발행 중...' : '임대료/관리비'}
+        </button>
         <button
           onClick={handleGenerate}
           disabled={generating}
