@@ -363,6 +363,10 @@ const pool = new Pool({
     FROM tenants t WHERE mr.tenant_id = t.id AND mr.floor IS NULL
   `);
 
+  // tenants.floor UNIQUE/NOT NULL 제거 (머지 전에 해제해야 floor=NULL 가능)
+  try { await pool.query(`ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_floor_key`); } catch {}
+  try { await pool.query(`ALTER TABLE tenants ALTER COLUMN floor DROP NOT NULL`); } catch {}
+
   // ─── 브이모먼트 다중층 머지 (2층+4층 → 1개 tenant) ───────
   {
     const { rows: vms } = await pool.query(
@@ -434,9 +438,6 @@ const pool = new Pool({
   try { await pool.query(`ALTER TABLE meter_readings DROP CONSTRAINT IF EXISTS meter_readings_tenant_id_year_month_utility_type_key`); } catch {}
   try { await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meter_readings_unique ON meter_readings (tenant_id, floor, year, month, utility_type)`); } catch {}
 
-  // tenants.floor UNIQUE/NOT NULL 제거 (기존 제약 해제)
-  try { await pool.query(`ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_floor_key`); } catch {}
-  try { await pool.query(`ALTER TABLE tenants ALTER COLUMN floor DROP NOT NULL`); } catch {}
 
   console.log("테이블 초기화 완료");
 
