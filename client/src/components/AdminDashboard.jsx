@@ -58,16 +58,21 @@ export default function AdminDashboard() {
   };
 
   const activeTenants = tenants.filter((t) => t.is_active);
+  const meterTenants = activeTenants.filter((t) => !t.meter_exempt);
   const fmt = (n) => (n || 0).toLocaleString();
 
-  // Meter upload stats
+  // Meter upload stats — reading_value 입력 완료 기준 (사진 유무 무관)
   const isWaterMonth = month % 2 === 1;
-  const requiredPerTenant = isWaterMonth ? 2 : 1;
-  const fullyUploadedCount = activeTenants.filter((t) => {
-    const tenantUploads = readings.filter((r) => r.tenant_id === t.id && r.uploaded_at);
-    return tenantUploads.length >= requiredPerTenant;
+  const fullyUploadedCount = meterTenants.filter((t) => {
+    const floors = t.floors || [t.floor];
+    const requiredTypes = isWaterMonth ? ['electricity', 'water'] : ['electricity'];
+    return requiredTypes.every((utype) =>
+      floors.every((fl) =>
+        readings.some((r) => r.tenant_id === t.id && r.floor === fl && r.utility_type === utype && r.reading_value != null)
+      )
+    );
   }).length;
-  const totalExpected = activeTenants.length;
+  const totalExpected = meterTenants.length;
   const allUploaded = fullyUploadedCount === totalExpected && totalExpected > 0;
 
   // Billing stats (부가세 10% 포함, 수도세 면세)

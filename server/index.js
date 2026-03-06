@@ -681,7 +681,7 @@ const WATER_SUB_METERS = {
   }
 
   // ─── Tenants API ──────────────────────────────────────────
-  const TENANT_LIST_COLS = "id, floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, is_active, created_at, must_change_password, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc_filename";
+  const TENANT_LIST_COLS = "id, floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, is_active, created_at, must_change_password, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc_filename, meter_exempt";
 
   // tenant 목록에 floors 배열 추가 헬퍼
   async function attachFloors(tenantRows) {
