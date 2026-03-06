@@ -116,7 +116,7 @@ const pool = new Pool({
   await pool.query(`
     UPDATE tenants
     SET must_change_password = CASE
-      WHEN password = LPAD(COALESCE((SELECT MIN(tf.floor) FROM tenant_floors tf WHERE tf.tenant_id = tenants.id), floor)::text, 4, '0') THEN TRUE
+      WHEN password = LPAD(floor::text, 4, '0') THEN TRUE
       ELSE FALSE
     END
     WHERE must_change_password IS NULL
