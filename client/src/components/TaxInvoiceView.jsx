@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Download, Clock, CheckCircle } from 'lucide-react';
+import { Download, Clock, CheckCircle, Trash2 } from 'lucide-react';
 
 export default function TaxInvoiceView() {
   const now = new Date();
@@ -242,16 +242,27 @@ export default function TaxInvoiceView() {
                         <span className={`text-sm font-medium ${inv.is_issued ? 'text-green-600' : 'text-gray-900'}`}>{fmt(inv.total_amount)}원</span>
                         <p className="text-[11px] text-gray-400">공급 {fmt(inv.supply_amount)} / 세액 {fmt(inv.tax_amount)}</p>
                       </div>
-                      <button
-                        onClick={() => handleToggleIssue(inv.bill_id, inv.item_type)}
-                        className={`px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
-                          inv.is_issued
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                        }`}
-                      >
-                        {inv.is_issued ? '발행' : '대기'}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleToggleIssue(inv.bill_id, inv.item_type)}
+                          className={`px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
+                            inv.is_issued
+                              ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                              : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                          }`}
+                        >
+                          {inv.is_issued ? '발행' : '대기'}
+                        </button>
+                        {!inv.is_issued && (
+                          <button
+                            onClick={() => alert('세금계산서는 청구서에서 파생됩니다.\n청구서 탭에서 해당 항목의 금액을 0으로 수정하거나 청구건을 삭제하면 자동 반영됩니다.')}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                            title="삭제"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
