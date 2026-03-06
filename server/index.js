@@ -128,6 +128,10 @@ const pool = new Pool({
     ALTER TABLE tenants ALTER COLUMN must_change_password SET NOT NULL
   `);
 
+  // 사업자등록증 이미지 컬럼
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS biz_doc BYTEA`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS biz_doc_filename TEXT`);
+
   // 세금계산서 공급받는자 정보 (입주사 약식 정보와 별도 관리)
   const taxCols = ['tax_company_name', 'tax_representative', 'tax_address', 'tax_business_type', 'tax_business_item', 'tax_email', 'tax_email2'];
   for (const col of taxCols) {
@@ -489,6 +493,38 @@ const pool = new Pool({
     }
   });
 
+  // ─── Tenant biz-doc (auth 미들웨어 앞: 새 탭에서 query token 사용) ──
+  app.get("/tenants/:id/biz-doc", (req, res, next) => {
+    const auth = req.headers.authorization;
+    const token = auth?.startsWith("Bearer ") ? auth.slice(7) : req.query.token;
+    if (!token) return res.status(401).json({ error: "인증이 필요합니다" });
+    const user = sessions.get(token);
+    if (!user) return res.status(401).json({ error: "세션이 만료되었습니다" });
+    if (Date.now() - user.createdAt > SESSION_TTL_MS) {
+      sessions.delete(token);
+      return res.status(401).json({ error: "세션이 만료되었습니다" });
+    }
+    if (user.role !== "admin") return res.status(403).json({ error: "관리자 권한이 필요합니다" });
+    req.user = user;
+    next();
+  }, async (req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT biz_doc, biz_doc_filename FROM tenants WHERE id = $1", [req.params.id]);
+      if (rows.length === 0 || !rows[0].biz_doc) {
+        return res.status(404).json({ error: "파일이 없습니다" });
+      }
+      const buf = rows[0].biz_doc;
+      const filename = rows[0].biz_doc_filename || "document.jpg";
+      const ext = filename.split(".").pop().toLowerCase();
+      const mimeMap = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png" };
+      res.set("Content-Type", mimeMap[ext] || "image/jpeg");
+      res.send(buf);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
   // ─── Auth Middleware ──────────────────────────────────────
   app.use((req, res, next) => {
     const auth = req.headers.authorization;
@@ -526,13 +562,15 @@ const pool = new Pool({
   }
 
   // ─── Tenants API ──────────────────────────────────────────
+  const TENANT_LIST_COLS = "id, floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, is_active, created_at, must_change_password, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc_filename";
+
   app.get("/tenants", async (req, res) => {
     try {
       if (req.user.role === "tenant") {
-      const { rows } = await pool.query("SELECT * FROM tenants WHERE id = $1", [req.user.id]);
+      const { rows } = await pool.query(`SELECT ${TENANT_LIST_COLS} FROM tenants WHERE id = $1`, [req.user.id]);
       return res.json(rows);
       }
-      const { rows } = await pool.query("SELECT * FROM tenants ORDER BY floor ASC");
+      const { rows } = await pool.query(`SELECT ${TENANT_LIST_COLS} FROM tenants ORDER BY floor ASC`);
       res.json(rows);
     } catch (err) {
       console.error(err);
@@ -541,7 +579,7 @@ const pool = new Pool({
   });
 
   app.post("/tenants", requireAdmin, async (req, res) => {
-    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2 } = req.body;
+    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc_base64, biz_doc_filename } = req.body;
     if (!floor || !company_name) {
       return res.status(400).json({ error: "층수와 업체명은 필수입니다" });
     }
@@ -550,11 +588,21 @@ const pool = new Pool({
       if (dup.length > 0) {
         return res.status(409).json({ error: "해당 층에 이미 입주사가 등록되어 있습니다" });
       }
+      let docBuf = null, docSafe = null;
+      if (biz_doc_base64) {
+        const base64Data = biz_doc_base64.replace(/^data:[^;]+;base64,/, "");
+        docBuf = Buffer.from(base64Data, "base64");
+        if (docBuf.length > 5 * 1024 * 1024) return res.status(400).json({ error: "파일 크기는 5MB 이하여야 합니다" });
+        const isJpeg = docBuf[0] === 0xFF && docBuf[1] === 0xD8 && docBuf[2] === 0xFF;
+        const isPng = docBuf[0] === 0x89 && docBuf[1] === 0x50 && docBuf[2] === 0x4E && docBuf[3] === 0x47;
+        if (!isJpeg && !isPng) return res.status(400).json({ error: "JPEG 또는 PNG 이미지만 업로드 가능합니다" });
+        docSafe = biz_doc_filename ? path.basename(biz_doc_filename).replace(/[^a-zA-Z0-9가-힣._-]/g, "_") : null;
+      }
       const pw = password || String(floor).padStart(4, "0");
       const { rows } = await pool.query(
-        `INSERT INTO tenants (floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, must_change_password, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,TRUE,$18,$19,$20,$21,$22,$23,$24) RETURNING id`,
-        [floor, company_name, business_number || null, representative || null, business_type || null, business_item || null, address || null, contact_phone || null, email || null, pw, rent_amount || 0, maintenance_fee || 0, deposit_amount || 0, lease_start || null, lease_end || null, billing_day || 1, payment_type || 'prepaid', tax_company_name || '', tax_representative || '', tax_address || '', tax_business_type || '', tax_business_item || '', tax_email || '', tax_email2 || '']
+        `INSERT INTO tenants (floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, must_change_password, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc, biz_doc_filename)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,TRUE,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING id`,
+        [floor, company_name, business_number || null, representative || null, business_type || null, business_item || null, address || null, contact_phone || null, email || null, pw, rent_amount || 0, maintenance_fee || 0, deposit_amount || 0, lease_start || null, lease_end || null, billing_day || 1, payment_type || 'prepaid', tax_company_name || '', tax_representative || '', tax_address || '', tax_business_type || '', tax_business_item || '', tax_email || '', tax_email2 || '', docBuf, docSafe]
       );
       res.json({ id: rows[0].id });
     } catch (err) {
@@ -565,7 +613,7 @@ const pool = new Pool({
 
   app.put("/tenants/:id", requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, is_active, billing_day, payment_type, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2 } = req.body;
+    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, is_active, billing_day, payment_type, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc_base64, biz_doc_filename } = req.body;
     try {
       // Check floor conflict
       if (floor) {
@@ -574,8 +622,18 @@ const pool = new Pool({
           return res.status(409).json({ error: "해당 층에 이미 다른 입주사가 있습니다" });
         }
       }
-      await pool.query(
-        `UPDATE tenants SET
+      let docBuf = undefined, docSafe = undefined;
+      if (biz_doc_base64) {
+        const base64Data = biz_doc_base64.replace(/^data:[^;]+;base64,/, "");
+        docBuf = Buffer.from(base64Data, "base64");
+        if (docBuf.length > 5 * 1024 * 1024) return res.status(400).json({ error: "파일 크기는 5MB 이하여야 합니다" });
+        const isJpeg = docBuf[0] === 0xFF && docBuf[1] === 0xD8 && docBuf[2] === 0xFF;
+        const isPng = docBuf[0] === 0x89 && docBuf[1] === 0x50 && docBuf[2] === 0x4E && docBuf[3] === 0x47;
+        if (!isJpeg && !isPng) return res.status(400).json({ error: "JPEG 또는 PNG 이미지만 업로드 가능합니다" });
+        docSafe = biz_doc_filename ? path.basename(biz_doc_filename).replace(/[^a-zA-Z0-9가-힣._-]/g, "_") : null;
+      }
+
+      let query = `UPDATE tenants SET
           floor = COALESCE($1, floor),
           company_name = COALESCE($2, company_name),
           business_number = $3,
@@ -604,10 +662,15 @@ const pool = new Pool({
           tax_business_type = COALESCE($22, tax_business_type),
           tax_business_item = COALESCE($23, tax_business_item),
           tax_email = COALESCE($24, tax_email),
-          tax_email2 = COALESCE($25, tax_email2)
-        WHERE id = $26`,
-        [floor, company_name, business_number ?? null, representative ?? null, business_type ?? null, business_item ?? null, address ?? null, contact_phone ?? null, email ?? null, password || "", rent_amount, maintenance_fee, deposit_amount, lease_start || null, lease_end || null, is_active, billing_day, payment_type, tax_company_name ?? '', tax_representative ?? '', tax_address ?? '', tax_business_type ?? '', tax_business_item ?? '', tax_email ?? '', tax_email2 ?? '', id]
-      );
+          tax_email2 = COALESCE($25, tax_email2)`;
+      const params = [floor, company_name, business_number ?? null, representative ?? null, business_type ?? null, business_item ?? null, address ?? null, contact_phone ?? null, email ?? null, password || "", rent_amount, maintenance_fee, deposit_amount, lease_start || null, lease_end || null, is_active, billing_day, payment_type, tax_company_name ?? '', tax_representative ?? '', tax_address ?? '', tax_business_type ?? '', tax_business_item ?? '', tax_email ?? '', tax_email2 ?? ''];
+      if (docBuf !== undefined) {
+        query += `, biz_doc=$${params.length + 1}, biz_doc_filename=$${params.length + 2}`;
+        params.push(docBuf, docSafe);
+      }
+      query += ` WHERE id=$${params.length + 1}`;
+      params.push(id);
+      await pool.query(query, params);
       res.json({ success: true });
     } catch (err) {
       console.error(err);

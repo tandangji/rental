@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { API_BASE, authFetch } from '../utils/api';
-import { X, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { API_BASE, authFetch, getToken } from '../utils/api';
+import { X, ChevronDown, ChevronUp, Upload, ExternalLink } from 'lucide-react';
+import { compressImage } from '../utils/imageCompress';
 
 export default function TenantForm({ tenant, onClose, onSaved }) {
   const isEdit = !!tenant;
+  const fileRef = useRef(null);
   const [showTax, setShowTax] = useState(false);
   const [form, setForm] = useState({
     floor: tenant?.floor || '',
@@ -30,10 +32,45 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
     tax_email: tenant?.tax_email || '',
     tax_email2: tenant?.tax_email2 || '',
   });
+  const [bizDocBase64, setBizDocBase64] = useState(null);
+  const [bizDocFilename, setBizDocFilename] = useState(tenant?.biz_doc_filename || '');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
+
+  const hasBizDoc = isEdit && tenant?.biz_doc_filename && !bizDocBase64;
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('이미지 파일만 업로드 가능합니다');
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setError('파일 크기는 50MB 이하여야 합니다');
+      return;
+    }
+    setError('');
+    try {
+      const compressed = await compressImage(file);
+      const reader = new FileReader();
+      reader.onload = () => {
+        setBizDocBase64(reader.result);
+        setBizDocFilename(file.name);
+      };
+      reader.readAsDataURL(compressed);
+    } catch {
+      setError('이미지 처리 실패');
+    }
+  };
+
+  const openBizDoc = () => {
+    if (!isEdit || !tenant?.id) return;
+    const token = getToken();
+    window.open(`${API_BASE}/tenants/${tenant.id}/biz-doc?token=${token}`, '_blank');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -41,6 +78,10 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
     setSaving(true);
     try {
       const body = { ...form, rent_amount: Number(form.rent_amount), maintenance_fee: Number(form.maintenance_fee), deposit_amount: Number(form.deposit_amount), floor: Number(form.floor) };
+      if (bizDocBase64) {
+        body.biz_doc_base64 = bizDocBase64;
+        body.biz_doc_filename = bizDocFilename;
+      }
       const url = isEdit ? `${API_BASE}/tenants/${tenant.id}` : `${API_BASE}/tenants`;
       const method = isEdit ? 'PUT' : 'POST';
       const res = await authFetch(url, {
@@ -147,6 +188,27 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">계약 종료일</label>
               <input type="date" value={form.lease_end} onChange={(e) => set('lease_end', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+
+          {/* 사업자등록증 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">사업자등록증</label>
+            <input type="file" ref={fileRef} accept="image/*" onChange={handleFileChange} className="hidden" />
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                <Upload className="w-4 h-4 text-gray-500" />
+                {bizDocBase64 ? bizDocFilename : '파일 선택'}
+              </button>
+              {hasBizDoc && (
+                <button type="button" onClick={openBizDoc} className="flex items-center gap-1 px-3 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50">
+                  <ExternalLink className="w-4 h-4" />
+                  {tenant.biz_doc_filename}
+                </button>
+              )}
+              {bizDocBase64 && (
+                <span className="text-xs text-green-600">새 파일 선택됨</span>
+              )}
             </div>
           </div>
 
