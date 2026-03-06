@@ -61,19 +61,21 @@ export default function AdminDashboard() {
   const meterTenants = activeTenants.filter((t) => !t.meter_exempt);
   const fmt = (n) => (n || 0).toLocaleString();
 
-  // Meter upload stats — reading_value 입력 완료 기준 (사진 유무 무관)
+  // Meter upload stats — 개별 검침 건수 기준 (층별 × 유틸리티별)
   const isWaterMonth = month % 2 === 1;
-  const fullyUploadedCount = meterTenants.filter((t) => {
-    const floors = t.floors || [t.floor];
-    const requiredTypes = isWaterMonth ? ['electricity', 'water'] : ['electricity'];
-    return requiredTypes.every((utype) =>
-      floors.every((fl) =>
-        readings.some((r) => r.tenant_id === t.id && r.floor === fl && r.utility_type === utype && r.reading_value != null)
-      )
-    );
-  }).length;
-  const totalExpected = meterTenants.length;
-  const allUploaded = fullyUploadedCount === totalExpected && totalExpected > 0;
+  const requiredTypes = isWaterMonth ? ['electricity', 'water'] : ['electricity'];
+  let meterDone = 0;
+  let meterTotal = 0;
+  meterTenants.forEach((t) => {
+    const floors = t.floors || (t.floor != null ? [t.floor] : []);
+    meterTotal += floors.length * requiredTypes.length;
+    requiredTypes.forEach((utype) => {
+      floors.forEach((fl) => {
+        if (readings.some((r) => r.tenant_id === t.id && r.floor === fl && r.utility_type === utype && r.reading_value != null)) meterDone++;
+      });
+    });
+  });
+  const allUploaded = meterDone === meterTotal && meterTotal > 0;
 
   // Billing stats (부가세 10% 포함, 수도세 면세)
   const withVat = (n, noVat) => (n || 0) + (noVat ? 0 : Math.round((n || 0) * 0.1));
@@ -94,7 +96,7 @@ export default function AdminDashboard() {
 
   const cards = [
     { label: '활성 입주사', value: activeTenants.length, sub: `총 ${tenants.length}개`, icon: Users, color: 'bg-blue-50 text-blue-600' },
-    { label: '사진 업로드', value: `${fullyUploadedCount}/${totalExpected}`, sub: allUploaded ? '모두 완료' : '진행 중', icon: Camera, color: allUploaded ? 'bg-green-50 text-green-600' : 'bg-yellow-50 text-yellow-600' },
+    { label: '검침 입력', value: `${meterDone}/${meterTotal}`, sub: allUploaded ? '모두 완료' : '진행 중', icon: Camera, color: allUploaded ? 'bg-green-50 text-green-600' : 'bg-yellow-50 text-yellow-600' },
     { label: '청구', value: bills.length > 0 ? `${fmt(totalBilled)}원` : '미생성', sub: bills.length > 0 ? `수납 ${fmt(totalPaid)}원` : '', icon: Receipt, color: 'bg-purple-50 text-purple-600' },
     { label: '미납', value: unpaidTenants > 0 ? `${unpaidTenants}건` : '없음', sub: unpaidTenants > 0 ? `${fmt(totalBilled - totalPaid)}원` : '', icon: unpaidTenants > 0 ? AlertTriangle : Check, color: unpaidTenants > 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600' },
   ];
