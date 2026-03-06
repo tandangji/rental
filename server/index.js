@@ -656,16 +656,6 @@ const pool = new Pool({
     next();
   });
 
-  app.use((req, res, next) => {
-    if (req.user.role !== "tenant") return next();
-    if (!req.user.mustChangePassword) return next();
-    if (req.method === "POST" && req.path === "/tenants/me/password") return next();
-    return res.status(403).json({
-      error: "초기 비밀번호를 변경한 뒤 이용할 수 있습니다",
-      code: "PASSWORD_CHANGE_REQUIRED",
-    });
-  });
-
   function requireAdmin(req, res, next) {
     if (req.user.role !== "admin") {
       return res.status(403).json({ error: "관리자 권한이 필요합니다" });
