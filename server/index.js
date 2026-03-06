@@ -279,6 +279,8 @@ const pool = new Pool({
   try { await pool.query("ALTER TABLE tax_invoices DROP CONSTRAINT IF EXISTS tax_invoices_tenant_id_year_month_key"); } catch {}
   // 새 UNIQUE INDEX 생성
   try { await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_tax_inv_unique ON tax_invoices (tenant_id, year, month, item_type)"); } catch {}
+  // Migration: item_name 컬럼 추가
+  try { await pool.query("ALTER TABLE tax_invoices ADD COLUMN IF NOT EXISTS item_name TEXT"); } catch {}
 
   // partners (협력사/직원)
   await pool.query(`
@@ -1179,7 +1181,7 @@ const pool = new Pool({
     }
   });
 
-  // ─── Tax Invoices API (항목별 개별 발행) ─────────────────
+  // ─── Tax Invoices API (독립 CRUD) ─────────────────
   const ITEM_TYPES = [
     { type: "rent", name: "임대료", amountField: "rent_amount" },
     { type: "maintenance", name: "관리비", amountField: "maintenance_fee" },
@@ -1188,137 +1190,145 @@ const pool = new Pool({
     { type: "other", name: "기타", amountField: "other_amount" },
   ];
 
+  // GET /tax-invoices — tax_invoices 직접 조회
   app.get("/tax-invoices", async (req, res) => {
     const { year, month } = req.query;
     try {
-      // 1) 월별 청구서 조회
-      let billQuery = `
-        SELECT mb.id as bill_id, mb.tenant_id, mb.year, mb.month,
-               mb.rent_amount, mb.maintenance_fee, mb.electricity_amount, mb.water_amount,
-               mb.other_amount, mb.other_label,
-               t.floor, t.company_name, t.business_number, t.representative, t.address,
+      let query = `
+        SELECT ti.*, t.floor, t.company_name, t.business_number, t.representative, t.address,
                t.business_type, t.business_item, t.email,
                t.tax_company_name, t.tax_representative, t.tax_address,
                t.tax_business_type, t.tax_business_item, t.tax_email, t.tax_email2
-        FROM monthly_bills mb
-        JOIN tenants t ON mb.tenant_id = t.id WHERE 1=1`;
+        FROM tax_invoices ti
+        JOIN tenants t ON ti.tenant_id = t.id
+        WHERE 1=1`;
       const params = [];
       if (req.user.role === "tenant") {
-        billQuery += ` AND mb.tenant_id = $${params.length + 1}`;
+        query += ` AND ti.tenant_id = $${params.length + 1}`;
         params.push(req.user.id);
       }
       if (year && month) {
-        billQuery += ` AND mb.year = $${params.length + 1} AND mb.month = $${params.length + 2}`;
+        query += ` AND ti.year = $${params.length + 1} AND ti.month = $${params.length + 2}`;
         params.push(Number(year), Number(month));
       }
-      billQuery += " ORDER BY t.floor ASC";
-      const { rows: bills } = await pool.query(billQuery, params);
+      query += " ORDER BY t.floor ASC, ti.item_type ASC";
+      const { rows } = await pool.query(query, params);
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
 
-      // 2) 세금계산서 발행 이력 조회
-      let taxQuery = "SELECT * FROM tax_invoices WHERE 1=1";
-      const taxParams = [];
-      if (req.user.role === "tenant") {
-        taxQuery += ` AND tenant_id = $${taxParams.length + 1}`;
-        taxParams.push(req.user.id);
-      }
-      if (year && month) {
-        taxQuery += ` AND year = $${taxParams.length + 1} AND month = $${taxParams.length + 2}`;
-        taxParams.push(Number(year), Number(month));
-      }
-      const { rows: taxRecords } = await pool.query(taxQuery, taxParams);
-
-      // 3) 항목별 개별 세금계산서 생성
-      const result = [];
+  // POST /tax-invoices/generate — 초안 생성 (monthly_bills → tax_invoices 복사)
+  app.post("/tax-invoices/generate", requireAdmin, async (req, res) => {
+    const { year, month } = req.body;
+    if (!year || !month) return res.status(400).json({ error: "year, month 필수" });
+    try {
+      const { rows: bills } = await pool.query(
+        `SELECT mb.*, t.floor FROM monthly_bills mb JOIN tenants t ON mb.tenant_id = t.id
+         WHERE mb.year = $1 AND mb.month = $2`, [Number(year), Number(month)]
+      );
+      let created = 0, skipped = 0;
       for (const bill of bills) {
         for (const { type, name, amountField } of ITEM_TYPES) {
           const amount = bill[amountField] || 0;
           if (amount <= 0) continue;
-          const taxRecord = taxRecords.find((t) =>
-            t.tenant_id === bill.tenant_id && t.year === bill.year && t.month === bill.month && t.item_type === type
-          );
+          const itemName = type === "other" ? (bill.other_label || "기타") : name;
           const taxAmount = type === "water" ? 0 : Math.round(amount * 0.1);
-          result.push({
-            bill_id: bill.bill_id,
-            tenant_id: bill.tenant_id,
-            year: bill.year,
-            month: bill.month,
-            floor: bill.floor,
-            company_name: bill.company_name,
-            business_number: bill.business_number || "",
-            representative: bill.representative || "",
-            address: bill.address || "",
-            business_type: bill.business_type || "",
-            business_item: bill.business_item || "",
-            email: bill.email || "",
-            tax_company_name: bill.tax_company_name || "",
-            tax_representative: bill.tax_representative || "",
-            tax_address: bill.tax_address || "",
-            tax_business_type: bill.tax_business_type || "",
-            tax_business_item: bill.tax_business_item || "",
-            tax_email: bill.tax_email || "",
-            tax_email2: bill.tax_email2 || "",
-            item_type: type,
-            item_name: type === "other" ? (bill.other_label || "기타") : name,
-            supply_amount: amount,
-            tax_amount: taxAmount,
-            total_amount: amount + taxAmount,
-            tax_id: taxRecord?.id,
-            is_issued: taxRecord?.is_issued || false,
-            issued_date: taxRecord?.issued_date,
-          });
+          const totalAmount = amount + taxAmount;
+          const { rowCount } = await pool.query(
+            `INSERT INTO tax_invoices (tenant_id, year, month, item_type, item_name, supply_amount, tax_amount, total_amount, is_issued)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,FALSE)
+             ON CONFLICT (tenant_id, year, month, item_type) DO NOTHING`,
+            [bill.tenant_id, Number(year), Number(month), type, itemName, amount, taxAmount, totalAmount]
+          );
+          if (rowCount > 0) created++; else skipped++;
         }
       }
-      res.json(result);
+      res.json({ created, skipped });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });
     }
   });
 
-  // Toggle issue status per item (발행대기 ↔ 발행완료)
-  app.patch("/tax-invoices/:billId/issue", requireAdmin, async (req, res) => {
-    const { billId } = req.params;
-    const { item_type } = req.body;
-    if (!item_type) return res.status(400).json({ error: "item_type 필수" });
+  // POST /tax-invoices — 단건 수동 추가
+  app.post("/tax-invoices", requireAdmin, async (req, res) => {
+    const { tenant_id, year, month, item_type, item_name, supply_amount, memo } = req.body;
+    if (!tenant_id || !year || !month || !item_type || supply_amount == null) {
+      return res.status(400).json({ error: "필수 필드 누락" });
+    }
     try {
-      const { rows: bills } = await pool.query("SELECT tenant_id, year, month FROM monthly_bills WHERE id = $1", [billId]);
-      if (bills.length === 0) return res.status(404).json({ error: "청구서를 찾을 수 없습니다" });
-      const { tenant_id, year, month } = bills[0];
-      const today = new Date().toISOString().split("T")[0];
-
-      const { rows: existing } = await pool.query(
-        "SELECT id, is_issued FROM tax_invoices WHERE tenant_id=$1 AND year=$2 AND month=$3 AND item_type=$4",
-        [tenant_id, year, month, item_type]
+      const taxAmount = item_type === "water" ? 0 : Math.round(Number(supply_amount) * 0.1);
+      const totalAmount = Number(supply_amount) + taxAmount;
+      const typeName = ITEM_TYPES.find((t) => t.type === item_type)?.name || item_type;
+      const { rows } = await pool.query(
+        `INSERT INTO tax_invoices (tenant_id, year, month, item_type, item_name, supply_amount, tax_amount, total_amount, memo, is_issued)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,FALSE)
+         RETURNING *`,
+        [tenant_id, Number(year), Number(month), item_type, item_name || typeName, Number(supply_amount), taxAmount, totalAmount, memo || null]
       );
+      res.json(rows[0]);
+    } catch (err) {
+      if (err.code === "23505") return res.status(409).json({ error: "이미 동일 항목이 존재합니다" });
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
 
-      if (existing.length === 0) {
-        await pool.query(
-          `INSERT INTO tax_invoices (tenant_id, year, month, item_type, supply_amount, tax_amount, total_amount, is_issued, issued_date)
-           VALUES ($1,$2,$3,$4,0,0,0,TRUE,$5)`,
-          [tenant_id, year, month, item_type, today]
-        );
-        return res.json({ success: true, is_issued: true });
-      }
+  // PUT /tax-invoices/:id — 수정
+  app.put("/tax-invoices/:id", requireAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { supply_amount, item_name, memo } = req.body;
+    try {
+      const { rows: existing } = await pool.query("SELECT * FROM tax_invoices WHERE id = $1", [id]);
+      if (existing.length === 0) return res.status(404).json({ error: "세금계산서를 찾을 수 없습니다" });
+      const inv = existing[0];
+      const newSupply = supply_amount != null ? Number(supply_amount) : inv.supply_amount;
+      const newTax = inv.item_type === "water" ? 0 : Math.round(newSupply * 0.1);
+      const newTotal = newSupply + newTax;
+      const newItemName = item_name !== undefined ? item_name : inv.item_name;
+      const newMemo = memo !== undefined ? memo : inv.memo;
+      const { rows } = await pool.query(
+        `UPDATE tax_invoices SET supply_amount=$1, tax_amount=$2, total_amount=$3, item_name=$4, memo=$5 WHERE id=$6 RETURNING *`,
+        [newSupply, newTax, newTotal, newItemName, newMemo, id]
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
 
-      const newVal = !existing[0].is_issued;
+  // DELETE /tax-invoices/:id — 삭제 (발행대기만)
+  app.delete("/tax-invoices/:id", requireAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+      const { rows } = await pool.query("SELECT is_issued FROM tax_invoices WHERE id = $1", [id]);
+      if (rows.length === 0) return res.status(404).json({ error: "세금계산서를 찾을 수 없습니다" });
+      if (rows[0].is_issued) return res.status(400).json({ error: "발행완료 건은 삭제할 수 없습니다. 먼저 대기 상태로 변경하세요." });
+      await pool.query("DELETE FROM tax_invoices WHERE id = $1", [id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  // PATCH /tax-invoices/:id/issue — 발행 토글
+  app.patch("/tax-invoices/:id/issue", requireAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+      const { rows } = await pool.query("SELECT id, is_issued FROM tax_invoices WHERE id = $1", [id]);
+      if (rows.length === 0) return res.status(404).json({ error: "세금계산서를 찾을 수 없습니다" });
+      const newVal = !rows[0].is_issued;
+      const today = new Date().toISOString().split("T")[0];
       await pool.query(
         "UPDATE tax_invoices SET is_issued = $1, issued_date = $2 WHERE id = $3",
-        [newVal, newVal ? today : null, existing[0].id]
+        [newVal, newVal ? today : null, id]
       );
       res.json({ success: true, is_issued: newVal });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "서버 오류가 발생했습니다" });
-    }
-  });
-
-  // Download settings (for tax invoice CSV: landlord info)
-  app.get("/tax-invoices/download-info", requireAdmin, async (req, res) => {
-    try {
-      const { rows } = await pool.query("SELECT * FROM settings");
-      const settings = {};
-      rows.forEach((r) => (settings[r.key] = r.value));
-      res.json(settings);
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });
