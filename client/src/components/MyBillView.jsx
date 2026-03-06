@@ -17,14 +17,15 @@ const withVat = (n, noVat) => (n || 0) + vat(n, noVat);
 export default function MyBillView({ user, settings }) {
   const now = new Date();
   const kst = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-  const prevMonth = kst.getMonth() === 0 ? 12 : kst.getMonth(); // 전월 (0-indexed이므로 getMonth()가 전월)
+  const prevMonth = kst.getMonth() === 0 ? 12 : kst.getMonth();
   const prevYear = kst.getMonth() === 0 ? kst.getFullYear() - 1 : kst.getFullYear();
   const [year, setYear] = useState(prevYear);
   const [month, setMonth] = useState(prevMonth);
   const [bills, setBills] = useState([]);
   const [taxInvoices, setTaxInvoices] = useState([]);
+  const [tenantInfo, setTenantInfo] = useState(null);
   const [downloading, setDownloading] = useState(false);
-  const billRef = useRef(null);
+  const pdfRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -39,6 +40,18 @@ export default function MyBillView({ user, settings }) {
     })();
   }, [year, month]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await authFetch(`${API_BASE}/tenants`);
+        if (res.ok) {
+          const data = await res.json();
+          setTenantInfo(data[0] || null);
+        }
+      } catch { /* ignore */ }
+    })();
+  }, []);
+
   const bill = bills[0];
   const fmt = (n) => (n || 0).toLocaleString();
 
@@ -46,15 +59,34 @@ export default function MyBillView({ user, settings }) {
     ? ITEMS.reduce((s, { amountField, noVat }) => s + withVat(bill[amountField], noVat), 0)
     : 0;
 
+  // PDF용 항목 필터링 (0원 제외)
+  const pdfItems = bill ? ITEMS.filter(({ amountField }) => bill[amountField] > 0).map(({ label, amountField, noVat, dynamic }) => {
+    const amount = bill[amountField];
+    const displayLabel = dynamic ? (bill.other_label || label) : label;
+    const vatAmt = vat(amount, noVat);
+    return { label: displayLabel + (noVat ? ' (면세)' : ''), supply: amount, tax: vatAmt, total: amount + vatAmt };
+  }) : [];
+
+  const totalSupply = pdfItems.reduce((s, i) => s + i.supply, 0);
+  const totalTax = pdfItems.reduce((s, i) => s + i.tax, 0);
+  const totalAmount = pdfItems.reduce((s, i) => s + i.total, 0);
+
+  // 문서번호, 청구일, 납부기한
+  const docNumber = bill ? `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(bill.id).padStart(4, '0')}` : '';
+  const billingDay = tenantInfo?.billing_day || 1;
+  const billingDate = `${year}-${String(month).padStart(2, '0')}-${String(billingDay).padStart(2, '0')}`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const dueDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
   const handleDownloadPDF = async () => {
-    if (!bill || !billRef.current) return;
+    if (!bill || !pdfRef.current) return;
     setDownloading(true);
     try {
       const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
         import('html2canvas'),
         import('jspdf'),
       ]);
-      const canvas = await html2canvas(billRef.current, {
+      const canvas = await html2canvas(pdfRef.current, {
         scale: 2,
         backgroundColor: '#ffffff',
         useCORS: true,
@@ -72,6 +104,39 @@ export default function MyBillView({ user, settings }) {
     } finally {
       setDownloading(false);
     }
+  };
+
+  // 인라인 스타일 헬퍼 (html2canvas 호환)
+  const s = {
+    page: { width: 794, padding: 48, fontFamily: 'system-ui, -apple-system, sans-serif', color: '#1a1a1a', fontSize: 13, lineHeight: 1.6, boxSizing: 'border-box', background: '#fff' },
+    title: { fontSize: 28, fontWeight: 700, letterSpacing: 2, marginBottom: 0 },
+    headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 },
+    companyInfo: { textAlign: 'right', fontSize: 12, color: '#555', lineHeight: 1.8 },
+    companyName: { fontSize: 15, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 },
+    divider: { borderTop: '2px solid #1a1a1a', margin: '0 0 24px 0' },
+    thinDivider: { borderTop: '1px solid #ddd', margin: '0 0 24px 0' },
+    infoGrid: { display: 'flex', justifyContent: 'space-between', marginBottom: 32 },
+    infoLeft: { flex: 1 },
+    infoRight: { flex: 1, textAlign: 'right' },
+    infoRow: { display: 'flex', marginBottom: 6 },
+    infoLabel: { width: 72, color: '#888', fontSize: 12 },
+    infoValue: { fontSize: 13, fontWeight: 500 },
+    bankLabel: { color: '#888', fontSize: 12, marginBottom: 2 },
+    bankValue: { fontSize: 13, fontWeight: 500 },
+    table: { width: '100%', borderCollapse: 'collapse', marginBottom: 24 },
+    th: { background: '#f5f5f5', borderTop: '2px solid #1a1a1a', borderBottom: '1px solid #ddd', padding: '10px 12px', fontSize: 12, fontWeight: 600, textAlign: 'right' },
+    thLeft: { background: '#f5f5f5', borderTop: '2px solid #1a1a1a', borderBottom: '1px solid #ddd', padding: '10px 12px', fontSize: 12, fontWeight: 600, textAlign: 'left' },
+    td: { borderBottom: '1px solid #eee', padding: '10px 12px', fontSize: 13, textAlign: 'right' },
+    tdLeft: { borderBottom: '1px solid #eee', padding: '10px 12px', fontSize: 13, textAlign: 'left' },
+    totalSection: { textAlign: 'right', marginBottom: 32, paddingRight: 12 },
+    totalRow: { display: 'flex', justifyContent: 'flex-end', marginBottom: 4 },
+    totalLabel: { width: 100, textAlign: 'right', color: '#555', fontSize: 13, marginRight: 16 },
+    totalValue: { width: 120, textAlign: 'right', fontSize: 13, fontWeight: 500 },
+    grandTotalRow: { display: 'flex', justifyContent: 'flex-end', marginTop: 8, paddingTop: 8, borderTop: '2px solid #1a1a1a' },
+    grandTotalLabel: { width: 100, textAlign: 'right', fontSize: 15, fontWeight: 700, marginRight: 16 },
+    grandTotalValue: { width: 120, textAlign: 'right', fontSize: 15, fontWeight: 700 },
+    notes: { background: '#fafafa', borderRadius: 6, padding: '14px 18px', fontSize: 11, color: '#777', lineHeight: 1.8 },
+    notesTitle: { fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 },
   };
 
   return (
@@ -105,7 +170,7 @@ export default function MyBillView({ user, settings }) {
 
       {bill ? (
         <>
-          <div ref={billRef} className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 mb-3">
             <div className="text-center mb-4">
               <p className="text-sm text-gray-500">{year}년 {month}월 <span className="text-xs text-gray-400">(부가세 포함, 수도 면세)</span></p>
               <p className="text-3xl font-bold text-gray-900 mt-1">
@@ -175,6 +240,100 @@ export default function MyBillView({ user, settings }) {
           </button>
 
           <BankInfo settings={settings} />
+
+          {/* 숨겨진 PDF 템플릿 */}
+          <div style={{ position: 'absolute', left: -9999, top: 0 }}>
+            <div ref={pdfRef} style={s.page}>
+              {/* 헤더 */}
+              <div style={s.headerRow}>
+                <div style={s.title}>청 구 서</div>
+                <div style={s.companyInfo}>
+                  <div style={s.companyName}>{settings?.tax_supplier_company || settings?.building_name || ''}</div>
+                  <div>{settings?.tax_supplier_address || ''}</div>
+                  <div>{settings?.landlord_phone || ''}</div>
+                  <div>{settings?.tax_supplier_email || ''}</div>
+                </div>
+              </div>
+
+              <div style={s.divider} />
+
+              {/* 고객 정보 + 입금 계좌 */}
+              <div style={s.infoGrid}>
+                <div style={s.infoLeft}>
+                  <div style={s.infoRow}>
+                    <span style={s.infoLabel}>고객명</span>
+                    <span style={s.infoValue}>
+                      {user.name}{tenantInfo?.representative ? ` (${tenantInfo.representative})` : ''}
+                    </span>
+                  </div>
+                  <div style={s.infoRow}>
+                    <span style={s.infoLabel}>문서번호</span>
+                    <span style={s.infoValue}>{docNumber}</span>
+                  </div>
+                  <div style={s.infoRow}>
+                    <span style={s.infoLabel}>청구일</span>
+                    <span style={s.infoValue}>{billingDate}</span>
+                  </div>
+                  <div style={s.infoRow}>
+                    <span style={s.infoLabel}>납부기한</span>
+                    <span style={s.infoValue}>{dueDate}</span>
+                  </div>
+                </div>
+                <div style={s.infoRight}>
+                  <div style={s.bankLabel}>입금 계좌 정보</div>
+                  <div style={s.bankValue}>{settings?.bank_name || ''}</div>
+                  <div style={{ ...s.bankValue, fontSize: 15 }}>{settings?.bank_account || ''}</div>
+                  <div style={s.bankValue}>예금주: {settings?.bank_holder || ''}</div>
+                </div>
+              </div>
+
+              {/* 품목 테이블 */}
+              <table style={s.table}>
+                <thead>
+                  <tr>
+                    <th style={s.thLeft}>품목</th>
+                    <th style={s.th}>공급가액</th>
+                    <th style={s.th}>세액</th>
+                    <th style={s.th}>합계</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pdfItems.map((item, i) => (
+                    <tr key={i}>
+                      <td style={s.tdLeft}>{item.label}</td>
+                      <td style={s.td}>{fmt(item.supply)}</td>
+                      <td style={s.td}>{fmt(item.tax)}</td>
+                      <td style={{ ...s.td, fontWeight: 600 }}>{fmt(item.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* 합계 */}
+              <div style={s.totalSection}>
+                <div style={s.totalRow}>
+                  <span style={s.totalLabel}>총 공급가액</span>
+                  <span style={s.totalValue}>{fmt(totalSupply)}</span>
+                </div>
+                <div style={s.totalRow}>
+                  <span style={s.totalLabel}>총 세액</span>
+                  <span style={s.totalValue}>{fmt(totalTax)}</span>
+                </div>
+                <div style={s.grandTotalRow}>
+                  <span style={s.grandTotalLabel}>총 합계</span>
+                  <span style={s.grandTotalValue}>{fmt(totalAmount)}원</span>
+                </div>
+              </div>
+
+              {/* 비고 */}
+              <div style={s.notes}>
+                <div style={s.notesTitle}>비고</div>
+                <div>· 수도세는 면세 항목입니다.</div>
+                <div>· 납부기한 경과 시 월 2%의 연체이자가 일수 계산으로 가산됩니다.</div>
+                <div>· 전자세금계산서는 홈택스(hometax.go.kr)를 통해 조회하실 수 있습니다.</div>
+              </div>
+            </div>
+          </div>
         </>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center mb-4">
