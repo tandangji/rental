@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BankInfo from './BankInfo';
-import { Camera, AlertCircle, Bell, Zap, Droplets, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Camera, AlertCircle, Bell, Zap, Droplets, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 
 const ITEMS = [
-  { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
-  { field: 'maintenance_paid', label: '관리비', amountField: 'maintenance_fee' },
-  { field: 'electricity_paid', label: '전기', amountField: 'electricity_amount' },
-  { field: 'water_paid', label: '수도', amountField: 'water_amount', noVat: true },
+  { field: 'rent_paid', label: '임대료', amountField: 'rent_amount', itemType: 'rent' },
+  { field: 'maintenance_paid', label: '관리비', amountField: 'maintenance_fee', itemType: 'maintenance' },
+  { field: 'electricity_paid', label: '전기', amountField: 'electricity_amount', itemType: 'electricity' },
+  { field: 'water_paid', label: '수도', amountField: 'water_amount', noVat: true, itemType: 'water' },
 ];
 
 const vat = (n, noVat) => noVat ? 0 : Math.round((n || 0) * 0.1);
@@ -26,6 +26,7 @@ export default function TenantDashboard({ user, settings }) {
   const isWaterPeriod = isCurrentMonth && kstMonth % 2 === 1 && kstDay === 6;
   const [bill, setBill] = useState(null);
   const [readings, setReadings] = useState([]);
+  const [taxInvoices, setTaxInvoices] = useState([]);
 
   const goMonth = (delta) => {
     let m = month + delta;
@@ -39,12 +40,14 @@ export default function TenantDashboard({ user, settings }) {
   useEffect(() => {
     (async () => {
       try {
-        const [bRes, rRes] = await Promise.all([
+        const [bRes, rRes, tRes] = await Promise.all([
           authFetch(`${API_BASE}/monthly-bills?year=${year}&month=${month}`),
           authFetch(`${API_BASE}/meter-readings?year=${year}&month=${month}`),
+          authFetch(`${API_BASE}/tax-invoices?year=${year}&month=${month}`),
         ]);
         if (bRes.ok) { const data = await bRes.json(); setBill(data[0] || null); }
         if (rRes.ok) setReadings(await rRes.json());
+        if (tRes.ok) setTaxInvoices(await tRes.json());
       } catch {}
     })();
   }, [year, month]);
@@ -142,23 +145,32 @@ export default function TenantDashboard({ user, settings }) {
           </div>
 
           <div className="space-y-3">
-            {ITEMS.map(({ field, label, amountField, noVat }) => {
+            {ITEMS.map(({ field, label, amountField, noVat, itemType }) => {
               const amount = bill[amountField];
               if (amount === 0) return null;
               const isPaid = bill[field];
               const vatAmt = vat(amount, noVat);
               const total = amount + vatAmt;
+              const taxInv = taxInvoices.find((t) => t.item_type === itemType);
+              const isIssued = taxInv?.is_issued;
               return (
                 <div key={field} className="border-b border-gray-50 last:border-0 pb-2 last:pb-0">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-sm font-medium text-gray-900">{label}</span>
-                    <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-                      isPaid
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      {isPaid ? '납부완료' : '납부대기'}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {isIssued && (
+                        <span className="flex items-center gap-0.5 px-2 py-0.5 text-[11px] font-medium rounded-full bg-blue-100 text-blue-700">
+                          <FileText className="w-3 h-3" />발행
+                        </span>
+                      )}
+                      <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
+                        isPaid
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {isPaid ? '납부완료' : '납부대기'}
+                      </span>
+                    </div>
                   </div>
                   <div className="grid grid-cols-3 text-xs text-gray-500">
                     <div>
