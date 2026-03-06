@@ -251,21 +251,28 @@ export default function AdminDashboard() {
       <div className="space-y-2">
         {activeTenants.map((t) => {
           const bill = bills.find((b) => b.tenant_id === t.id);
-          const tenantReadings = readings.filter((r) => r.tenant_id === t.id && r.uploaded_at);
-          const photoCount = tenantReadings.length;
+          const floors = t.floors || (t.floor != null ? [t.floor] : []);
+          const requiredTypes = isWaterMonth ? ['electricity', 'water'] : ['electricity'];
+          const readingsDone = t.meter_exempt ? floors.length * requiredTypes.length : requiredTypes.reduce((cnt, utype) =>
+            cnt + floors.filter((fl) => readings.some((r) => r.tenant_id === t.id && r.floor === fl && r.utility_type === utype && r.reading_value != null)).length, 0);
+          const readingsTotal = floors.length * requiredTypes.length;
           const allPaid = bill && payFields.every((f, i) => bill[amtFields[i]] === 0 || bill[f]);
           return (
             <div key={t.id} className="bg-white rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-blue-700 bg-blue-50 rounded-full w-6 h-6 flex items-center justify-center">
-                  {(t.floors || [t.floor]).join(',')}
+                  {floors.join(',')}
                 </span>
                 <span className="text-sm text-gray-900">{t.company_name}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded ${photoCount >= requiredPerTenant ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                  사진 {photoCount}/{requiredPerTenant}
+                {t.meter_exempt ? (
+                  <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-400">검침면제</span>
+                ) : (
+                <span className={`text-xs px-2 py-0.5 rounded ${readingsDone >= readingsTotal ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                  검침 {readingsDone}/{readingsTotal}
                 </span>
+                )}
                 {bill ? (
                   <span className={`text-xs px-2 py-0.5 rounded ${allPaid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                     {allPaid ? '완납' : '미납'}
