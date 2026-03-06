@@ -117,8 +117,10 @@ rental/
 | maintenance_fee | INTEGER | 관리비 |
 | electricity_amount | INTEGER | 전기 배분액 |
 | water_amount | INTEGER | 수도 배분액 |
-| rent_paid, maintenance_paid, electricity_paid, water_paid | BOOLEAN | 항목별 납부 여부 |
-| rent_paid_date ~ water_paid_date | DATE | 납부일 |
+| other_amount | INTEGER | 기타 항목 금액 |
+| other_label | TEXT | 기타 항목명 (예: 재활용비) |
+| rent_paid, maintenance_paid, electricity_paid, water_paid, other_paid | BOOLEAN | 항목별 납부 여부 |
+| rent_paid_date ~ water_paid_date, other_paid_date | DATE | 납부일 |
 | ※ gas_amount, gas_paid, gas_paid_date 컬럼은 DB에 존재하지만 코드에서 미사용 (DEFAULT 0) |
 | UNIQUE(tenant_id, year, month) | | |
 
@@ -151,7 +153,7 @@ rental/
 | id | SERIAL PK | |
 | tenant_id | FK → tenants | |
 | year, month | INTEGER | |
-| item_type | TEXT | rent/maintenance/electricity/water |
+| item_type | TEXT | rent/maintenance/electricity/water/other |
 | supply_amount | INTEGER | 공급가액 |
 | tax_amount | INTEGER | 세액 (supply × 0.1) |
 | total_amount | INTEGER | 총금액 |
@@ -200,6 +202,7 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | POST | /monthly-bills/generate | admin | 공과금 배분 + 청구서 생성 |
 | POST | /monthly-bills/generate-rent | admin | 임대료/관리비 수동 발행 (cron 누락 시 fallback) |
 | PATCH | /monthly-bills/:id/pay | admin | 납부 확인 토글 |
+| PATCH | /monthly-bills/:id/other | admin | 기타 항목 수정 (other_amount, other_label) |
 
 ### 세금계산서
 | Method | Path | 권한 | 설명 |
@@ -264,8 +267,8 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 ## 검침 주기 & 자동화 워크플로우
 
 ### 업로드 기간
-- **전기**: 매월 22~23일 검침 사진 업로드 → **24일 자동 배분**
-- **수도**: 홀수달(1,3,5,7,9,11월) 6~7일 검침 사진 업로드 → **8일 자동 배분**
+- **전기**: 매월 22일 검침 사진 업로드 → **24일 자동 배분**
+- **수도**: 홀수달(1,3,5,7,9,11월) 6일 검침 사진 업로드 → **8일 자동 배분**
 - 짝수달에는 수도 관련 UI(업로드·건물공과금·배분) 숨김
 - 업로드 기간 외: 버튼 disabled + 안내 문구 표시
 
@@ -273,10 +276,10 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 ```
 매월 말일   → 다음달 임대료+관리비 자동 발행
 
-홀수달 6~7일 → 수도 검침 사진 업로드 기간 (배너 표시)
+홀수달 6일 → 수도 검침 사진 업로드 기간 (배너 표시)
 홀수달 8일   → 수도 자동 배분 (building_bills 미입력→스킵)
 
-매월 22~23일 → 전기 검침 사진 업로드 기간 (배너 표시)
+매월 22일 → 전기 검침 사진 업로드 기간 (배너 표시)
 매월 24일    → 전기 자동 배분 (building_bills 미입력→스킵)
 ```
 
@@ -320,5 +323,6 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v1.7 | 2026-03-03 | 가스비 전체 제거, 말일 자동청구(KST), 건물주→관리자, 계약정보 박스 제거, 하단 네비 다크 스타일 |
 | v1.8 | 2026-03-03 | 문의하기 기능(입주사 제출·관리자 목록·삭제·처리 토글), 텔레그램 알림(문의·검침·청구·미납) |
 | v1.9 | 2026-03-05 | 검침 주기 차등화 — 전기 매월/수도 격월(홀수달), 짝수달 수도 UI 숨김, 유의사항 문구 업데이트 |
-| v2.0 | 2026-03-05 | 검침 자동화 워크플로우 — 업로드 기간 제한(전기 22~23일/수도 홀수달 6~7일), 자동 배분 cron(전기 24일/수도 8일), 미제출 1.5배 자동 적용, 검침일 배너 알림, 관리자 검침 일정 카드, 수도세 면세 처리, 월 선택기, 기본월 전월 설정 |
+| v2.0 | 2026-03-05 | 검침 자동화 워크플로우 — 업로드 기간 제한(전기 22일/수도 홀수달 6일), 자동 배분 cron(전기 24일/수도 8일), 미제출 1.5배 자동 적용, 검침일 배너 알림, 관리자 검침 일정 카드, 수도세 면세 처리, 월 선택기, 기본월 전월 설정 |
 | v2.1 | 2026-03-05 | 홈택스 XLSX 세금계산서 — CSV→XLSX 변환(59컬럼 홈택스 양식), 공급자/공급받는자 정보 별도 관리(settings+tenants tax_*), 동적 월 품목명, 수도 면세 제외 |
+| v2.2 | 2026-03-06 | 기타(other) 청구 항목 추가 — other_amount/other_label/other_paid 컬럼, 인라인 편집 UI, 세금계산서 자동 포함, 검침일 단일화(22일/6일), 전자세금계산서 홈택스 안내 추가 |
