@@ -56,18 +56,30 @@ export default function MeterUpload({ user }) {
     setUploading(`${floor}-${utilityType}`);
     setMessage('');
     try {
-      const base64 = await compressImage(file);
-      const res = await authFetch(`${API_BASE}/meter-readings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          year, month,
-          utility_type: utilityType,
-          photo_base64: base64,
-          photo_filename: file.name,
-          floor,
-        }),
-      });
+      let base64;
+      try {
+        base64 = await compressImage(file);
+      } catch (e) {
+        setMessage('이미지 압축 실패: ' + (e.message || e));
+        return;
+      }
+      let res;
+      try {
+        res = await authFetch(`${API_BASE}/meter-readings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            year, month,
+            utility_type: utilityType,
+            photo_base64: base64,
+            photo_filename: file.name,
+            floor,
+          }),
+        });
+      } catch (e) {
+        setMessage('서버 전송 실패: ' + (e.message || e));
+        return;
+      }
       if (res.ok) {
         setMessage(`${floor}층 ${ALL_UTILITY_TYPES.find(u => u.key === utilityType).label} 사진 업로드 완료`);
         loadReadings();
@@ -76,7 +88,7 @@ export default function MeterUpload({ user }) {
         setMessage(data.error || '업로드 실패');
       }
     } catch (err) {
-      setMessage('업로드 실패: ' + (err.message || err));
+      setMessage('알 수 없는 오류: ' + (err.message || err));
     } finally {
       setUploading(null);
     }
