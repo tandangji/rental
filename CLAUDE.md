@@ -404,3 +404,4 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v3.1 | 2026-03-06 | v3.0 핫픽스 + UX 개선 — 검침 면제(meter_exempt) 플래그, 비밀번호 미변경 시 API 차단 제거, 청구 납부 뱃지+버튼 분리 UI, 입주사 청구서/대시보드 세금계산서 발행 태그, 세금계산서 매월 20일 발행 안내, 검침 업로드 iOS 호환성 개선, 납부일 날짜 포맷팅 |
 | v3.2 | 2026-03-06 | 5층 수도 서브계량기 — meter_readings.sub_meter 컬럼 추가(hair_cold/hair_hot/laundry_cold/laundry_hot), UNIQUE 인덱스 COALESCE(sub_meter,'') 포함, 배분 로직 sub_meter 합산, 자동배분 서브계량기별 1.5배 처리, MeterUpload 4개 카드 UI, MeterOverview 4개 입력 칸 |
 | v3.3 | 2026-03-06 | 청구서 PDF 전문 양식 리디자인 — 숨겨진 A4 템플릿(pdfRef) 방식, 헤더(상호/사업자번호/전화/이메일/주소), 고객 정보(대표자명/문서번호/청구일/납부기한), 입금 계좌, 품목 테이블(공급가액/세액/합계), 비고란, tenant 정보 fetch 추가, 세금계산서 뱃지 '계산서 발행완료'로 통일(MyBillView+TenantDashboard) |
+| v3.4 | 2026-03-06 | 대시보드 검침 카드 개선 — 개별 검침 건수(층별×유틸리티별) 기준, meter_exempt 제외, reading_value 기준 카운트, 입주사 현황 검침면제 뱃지, TENANT_LIST_COLS에 meter_exempt 추가, 전월 완납 시 현재 월 자동 이동 |
