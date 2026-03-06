@@ -8,6 +8,16 @@ const ALL_UTILITY_TYPES = [
   { key: 'water', label: '수도', icon: Droplets, color: 'text-blue-500', bg: 'bg-blue-50' },
 ];
 
+// 5층 수도 서브계량기 정의
+const WATER_SUB_METERS = {
+  5: [
+    { key: 'hair_cold', label: '헤어 냉수' },
+    { key: 'hair_hot', label: '헤어 온수' },
+    { key: 'laundry_cold', label: '세탁실 냉수' },
+    { key: 'laundry_hot', label: '세탁실 온수' },
+  ]
+};
+
 // KST 기준 현재 날짜
 function getKstNow() {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
@@ -49,11 +59,14 @@ export default function MeterUpload({ user }) {
 
   useEffect(() => { loadReadings(); }, [year, month]);
 
-  const getReading = (type, floor) => readings.find((r) => r.utility_type === type && r.floor === floor);
+  const getReading = (type, floor, subMeter) => readings.find((r) =>
+    r.utility_type === type && r.floor === floor && (subMeter ? r.sub_meter === subMeter : !r.sub_meter)
+  );
 
-  const handleUpload = async (utilityType, floor, file) => {
+  const handleUpload = async (utilityType, floor, file, subMeter) => {
     if (!file) return;
-    setUploading(`${floor}-${utilityType}`);
+    const uploadKey = subMeter ? `${floor}-${utilityType}-${subMeter}` : `${floor}-${utilityType}`;
+    setUploading(uploadKey);
     setMessage('');
     try {
       let base64;
@@ -63,25 +76,22 @@ export default function MeterUpload({ user }) {
         setMessage('이미지 압축 실패: ' + (e.message || e));
         return;
       }
+      const body = { year, month, utility_type: utilityType, photo_base64: base64, photo_filename: file.name, floor };
+      if (subMeter) body.sub_meter = subMeter;
       let res;
       try {
         res = await authFetch(`${API_BASE}/meter-readings`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            year, month,
-            utility_type: utilityType,
-            photo_base64: base64,
-            photo_filename: file.name,
-            floor,
-          }),
+          body: JSON.stringify(body),
         });
       } catch (e) {
         setMessage('서버 전송 실패: ' + (e.message || e));
         return;
       }
       if (res.ok) {
-        setMessage(`${floor}층 ${ALL_UTILITY_TYPES.find(u => u.key === utilityType).label} 사진 업로드 완료`);
+        const subLabel = subMeter ? WATER_SUB_METERS[floor]?.find(s => s.key === subMeter)?.label : null;
+        setMessage(`${floor}층 ${ALL_UTILITY_TYPES.find(u => u.key === utilityType).label}${subLabel ? ` (${subLabel})` : ''} 사진 업로드 완료`);
         loadReadings();
       } else {
         const data = await res.json();
@@ -150,84 +160,92 @@ export default function MeterUpload({ user }) {
               <p className="text-sm font-bold text-gray-700 mb-2">{floor}층</p>
             )}
             <div className="space-y-3">
-              {ALL_UTILITY_TYPES.filter(u => u.key === 'electricity' || month % 2 === 1).map(({ key, label, icon: Icon, color, bg }) => {
-                const reading = getReading(key, floor);
-                const hasPhoto = reading?.uploaded_at;
-                const canUpload = !isCurrentMonth || isUploadPeriod(key);
-                const disabledMsg = key === 'electricity'
-                  ? '검침 기간은 매월 22일입니다'
-                  : '검침 기간은 홀수달 6일입니다';
-                const refKey = `${floor}-${key}`;
+              {ALL_UTILITY_TYPES.filter(u => u.key === 'electricity' || month % 2 === 1).flatMap(({ key, label, icon: Icon, color, bg }) => {
+                const subMeters = (key === 'water' && WATER_SUB_METERS[floor]) || null;
+                const entries = subMeters
+                  ? subMeters.map(sm => ({ subKey: sm.key, subLabel: sm.label }))
+                  : [{ subKey: null, subLabel: null }];
 
-                return (
-                  <div key={refKey} className={`rounded-xl border-2 p-4 ${hasPhoto ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white'}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full ${bg} flex items-center justify-center`}>
-                          <Icon className={`w-5 h-5 ${color}`} />
+                return entries.map(({ subKey, subLabel }) => {
+                  const reading = getReading(key, floor, subKey);
+                  const hasPhoto = reading?.uploaded_at;
+                  const canUpload = !isCurrentMonth || isUploadPeriod(key);
+                  const disabledMsg = key === 'electricity'
+                    ? '검침 기간은 매월 22일입니다'
+                    : '검침 기간은 홀수달 6일입니다';
+                  const refKey = subKey ? `${floor}-${key}-${subKey}` : `${floor}-${key}`;
+                  const displayLabel = subLabel ? `${label} — ${subLabel}` : label;
+
+                  return (
+                    <div key={refKey} className={`rounded-xl border-2 p-4 ${hasPhoto ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-full ${bg} flex items-center justify-center`}>
+                            <Icon className={`w-5 h-5 ${color}`} />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-gray-900">{displayLabel} 계량기</p>
+                            {hasPhoto ? (
+                              <p className="text-xs text-green-600 flex items-center gap-1">
+                                <Check className="w-3 h-3" /> 업로드 완료
+                                <span className="text-gray-400 ml-1">
+                                  {new Date(reading.uploaded_at).toLocaleDateString('ko-KR')}
+                                </span>
+                              </p>
+                            ) : !canUpload ? (
+                              <p className="text-xs text-gray-400 flex items-center gap-1">
+                                <Info className="w-3 h-3" /> {disabledMsg}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-gray-400">사진을 촬영해주세요</p>
+                            )}
+                          </div>
                         </div>
+
                         <div>
-                          <p className="font-semibold text-gray-900">{label} 계량기</p>
-                          {hasPhoto ? (
-                            <p className="text-xs text-green-600 flex items-center gap-1">
-                              <Check className="w-3 h-3" /> 업로드 완료
-                              <span className="text-gray-400 ml-1">
-                                {new Date(reading.uploaded_at).toLocaleDateString('ko-KR')}
-                              </span>
-                            </p>
-                          ) : !canUpload ? (
-                            <p className="text-xs text-gray-400 flex items-center gap-1">
-                              <Info className="w-3 h-3" /> {disabledMsg}
-                            </p>
-                          ) : (
-                            <p className="text-xs text-gray-400">사진을 촬영해주세요</p>
-                          )}
+                          <input
+                            ref={(el) => (fileRefs.current[refKey] = el)}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={(e) => handleUpload(key, floor, e.target.files?.[0], subKey)}
+                          />
+                          <button
+                            onClick={() => fileRefs.current[refKey]?.click()}
+                            disabled={uploading === refKey || !canUpload}
+                            className={`flex items-center gap-1 px-3 py-2 text-sm rounded-lg min-h-[44px] ${
+                              !canUpload
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : hasPhoto
+                                  ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                            } disabled:opacity-50`}
+                          >
+                            {uploading === refKey ? (
+                              <Upload className="w-4 h-4 animate-pulse" />
+                            ) : (
+                              <Camera className="w-4 h-4" />
+                            )}
+                            {!canUpload ? '기간 외' : hasPhoto ? '재업로드' : '촬영'}
+                          </button>
                         </div>
                       </div>
 
-                      <div>
-                        <input
-                          ref={(el) => (fileRefs.current[refKey] = el)}
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          className="hidden"
-                          onChange={(e) => handleUpload(key, floor, e.target.files?.[0])}
-                        />
-                        <button
-                          onClick={() => fileRefs.current[refKey]?.click()}
-                          disabled={uploading === refKey || !canUpload}
-                          className={`flex items-center gap-1 px-3 py-2 text-sm rounded-lg min-h-[44px] ${
-                            !canUpload
-                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                              : hasPhoto
-                                ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                : 'bg-blue-600 text-white hover:bg-blue-700'
-                          } disabled:opacity-50`}
-                        >
-                          {uploading === refKey ? (
-                            <Upload className="w-4 h-4 animate-pulse" />
-                          ) : (
-                            <Camera className="w-4 h-4" />
-                          )}
-                          {!canUpload ? '기간 외' : hasPhoto ? '재업로드' : '촬영'}
-                        </button>
-                      </div>
+                      {/* Photo preview */}
+                      {hasPhoto && reading.id && (
+                        <div className="mt-3">
+                          <img
+                            src={`${API_BASE}/meter-readings/${reading.id}/photo?token=${getToken()}`}
+                            alt={`${floor}층 ${displayLabel} 계량기`}
+                            className="w-full max-h-48 object-contain rounded-lg bg-gray-100"
+                            loading="lazy"
+                          />
+                        </div>
+                      )}
                     </div>
-
-                    {/* Photo preview */}
-                    {hasPhoto && reading.id && (
-                      <div className="mt-3">
-                        <img
-                          src={`${API_BASE}/meter-readings/${reading.id}/photo?token=${getToken()}`}
-                          alt={`${floor}층 ${label} 계량기`}
-                          className="w-full max-h-48 object-contain rounded-lg bg-gray-100"
-                          loading="lazy"
-                        />
-                      </div>
-                    )}
-                  </div>
-                );
+                  );
+                });
               })}
             </div>
           </div>

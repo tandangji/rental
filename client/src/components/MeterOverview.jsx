@@ -7,6 +7,16 @@ const ALL_UTILITY_TYPES = [
   { key: 'water', label: '수도', unit: 'm³', icon: Droplets, color: 'text-blue-500' },
 ];
 
+// 5층 수도 서브계량기 정의
+const WATER_SUB_METERS = {
+  5: [
+    { key: 'hair_cold', label: '헤어 냉수' },
+    { key: 'hair_hot', label: '헤어 온수' },
+    { key: 'laundry_cold', label: '세탁실 냉수' },
+    { key: 'laundry_hot', label: '세탁실 온수' },
+  ]
+};
+
 export default function MeterOverview() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -31,8 +41,9 @@ export default function MeterOverview() {
 
   useEffect(() => { load(); }, [load]);
 
-  const getReading = (tenantId, utype, floor) =>
-    readings.find((r) => r.tenant_id === tenantId && r.utility_type === utype && (!floor || r.floor === floor));
+  const getReading = (tenantId, utype, floor, subMeter) =>
+    readings.find((r) => r.tenant_id === tenantId && r.utility_type === utype && r.floor === floor
+      && (subMeter ? r.sub_meter === subMeter : !r.sub_meter));
 
   const handleSaveReading = async (readingId) => {
     try {
@@ -46,18 +57,14 @@ export default function MeterOverview() {
     } catch {}
   };
 
-  const handleCreateAndSave = async (tenantId, utilityType, floor) => {
+  const handleCreateAndSave = async (tenantId, utilityType, floor, subMeter) => {
     try {
+      const body = { tenant_id: tenantId, year, month, utility_type: utilityType, reading_value: editValue ? Number(editValue) : null, floor };
+      if (subMeter) body.sub_meter = subMeter;
       await authFetch(`${API_BASE}/meter-readings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenant_id: tenantId,
-          year, month,
-          utility_type: utilityType,
-          reading_value: editValue ? Number(editValue) : null,
-          floor,
-        }),
+        body: JSON.stringify(body),
       });
       setEditingId(null);
       load();
@@ -165,97 +172,105 @@ export default function MeterOverview() {
                   <p className="text-xs font-medium text-gray-500 mb-1.5">{floorNum}층</p>
                 )}
                 <div className={`grid ${isWaterMonth ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
-              {visibleTypes.map(({ key, label, unit, icon: Icon, color }) => {
-                const reading = getReading(tenant.id, key, floorNum);
-                const hasPhoto = !!reading?.uploaded_at;
-                const hasValue = reading?.reading_value != null;
-                const editKey = `${tenant.id}-${floorNum}-${key}`;
-                const isEditing = editingId === editKey;
+              {visibleTypes.flatMap(({ key, label, unit, icon: Icon, color }) => {
+                const subMeters = (key === 'water' && WATER_SUB_METERS[floorNum]) || null;
+                const entries = subMeters
+                  ? subMeters.map(sm => ({ subKey: sm.key, subLabel: sm.label }))
+                  : [{ subKey: null, subLabel: null }];
 
-                return (
-                  <div key={key} className={`rounded-lg p-3 text-center ${hasPhoto ? 'bg-green-50' : 'bg-gray-50'}`}>
-                    <Icon className={`w-4 h-4 mx-auto mb-1 ${color}`} />
-                    <p className="text-xs text-gray-500 mb-1">{label}</p>
+                return entries.map(({ subKey, subLabel }) => {
+                  const reading = getReading(tenant.id, key, floorNum, subKey);
+                  const hasPhoto = !!reading?.uploaded_at;
+                  const hasValue = reading?.reading_value != null;
+                  const editKey = subKey ? `${tenant.id}-${floorNum}-${key}-${subKey}` : `${tenant.id}-${floorNum}-${key}`;
+                  const isEditing = editingId === editKey;
+                  const displayLabel = subLabel || label;
 
-                    {/* 사진 썸네일 / 상태 */}
-                    <div className="mb-2">
-                      {hasPhoto ? (
-                        <div className="relative">
-                          <button onClick={() => setPhotoModal(reading.id)} className="w-full">
-                            <img
-                              src={`${API_BASE}/meter-readings/${reading.id}/photo?token=${getToken()}`}
-                              alt={`${label} 계량기`}
-                              className="w-full h-16 object-cover rounded bg-gray-100"
-                              loading="lazy"
-                            />
-                          </button>
-                          <button
-                            onClick={() => handleDeletePhoto(reading.id)}
-                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
+                  return (
+                    <div key={editKey} className={`rounded-lg p-3 text-center ${hasPhoto ? 'bg-green-50' : 'bg-gray-50'}`}>
+                      <Icon className={`w-4 h-4 mx-auto mb-1 ${color}`} />
+                      <p className="text-xs text-gray-500 mb-1">{displayLabel}</p>
+
+                      {/* 사진 썸네일 / 상태 */}
+                      <div className="mb-2">
+                        {hasPhoto ? (
+                          <div className="relative">
+                            <button onClick={() => setPhotoModal(reading.id)} className="w-full">
+                              <img
+                                src={`${API_BASE}/meter-readings/${reading.id}/photo?token=${getToken()}`}
+                                alt={`${displayLabel} 계량기`}
+                                className="w-full h-16 object-cover rounded bg-gray-100"
+                                loading="lazy"
+                              />
+                            </button>
+                            <button
+                              onClick={() => handleDeletePhoto(reading.id)}
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-full h-16 rounded bg-gray-100 flex items-center justify-center">
+                            <span className="text-xs text-gray-400 flex items-center gap-0.5">
+                              <Camera className="w-3 h-3" /> 미업로드
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 사용량 입력 */}
+                      {isEditing ? (
+                        <div className="space-y-1">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            className="w-full px-1 py-1.5 border border-gray-300 rounded text-xs text-center"
+                            autoFocus
+                            placeholder={unit}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                if (reading) handleSaveReading(reading.id);
+                                else handleCreateAndSave(tenant.id, key, floorNum, subKey);
+                              }
+                              if (e.key === 'Escape') setEditingId(null);
+                            }}
+                          />
+                          <div className="flex gap-1 justify-center">
+                            <button
+                              onClick={() => {
+                                if (reading) handleSaveReading(reading.id);
+                                else handleCreateAndSave(tenant.id, key, floorNum, subKey);
+                              }}
+                              className="text-green-600 text-xs p-1"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setEditingId(null)} className="text-gray-400 text-xs p-1">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       ) : (
-                        <div className="w-full h-16 rounded bg-gray-100 flex items-center justify-center">
-                          <span className="text-xs text-gray-400 flex items-center gap-0.5">
-                            <Camera className="w-3 h-3" /> 미업로드
-                          </span>
-                        </div>
+                        <button
+                          onClick={() => {
+                            setEditingId(editKey);
+                            setEditValue(reading?.reading_value ?? '');
+                          }}
+                          className={`text-xs w-full py-1.5 rounded ${
+                            hasValue
+                              ? 'font-mono font-medium text-gray-900 bg-white border border-gray-200 hover:border-blue-400'
+                              : 'text-amber-700 bg-amber-100 hover:bg-amber-200'
+                          }`}
+                        >
+                          {hasValue ? `${Number(reading.reading_value).toLocaleString()} ${unit}` : '사용량 입력'}
+                        </button>
                       )}
                     </div>
-
-                    {/* 사용량 입력 */}
-                    {isEditing ? (
-                      <div className="space-y-1">
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          className="w-full px-1 py-1.5 border border-gray-300 rounded text-xs text-center"
-                          autoFocus
-                          placeholder={unit}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              if (reading) handleSaveReading(reading.id);
-                              else handleCreateAndSave(tenant.id, key, floorNum);
-                            }
-                            if (e.key === 'Escape') setEditingId(null);
-                          }}
-                        />
-                        <div className="flex gap-1 justify-center">
-                          <button
-                            onClick={() => {
-                              if (reading) handleSaveReading(reading.id);
-                              else handleCreateAndSave(tenant.id, key, floorNum);
-                            }}
-                            className="text-green-600 text-xs p-1"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => setEditingId(null)} className="text-gray-400 text-xs p-1">
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setEditingId(editKey);
-                          setEditValue(reading?.reading_value ?? '');
-                        }}
-                        className={`text-xs w-full py-1.5 rounded ${
-                          hasValue
-                            ? 'font-mono font-medium text-gray-900 bg-white border border-gray-200 hover:border-blue-400'
-                            : 'text-amber-700 bg-amber-100 hover:bg-amber-200'
-                        }`}
-                      >
-                        {hasValue ? `${Number(reading.reading_value).toLocaleString()} ${unit}` : '사용량 입력'}
-                      </button>
-                    )}
-                  </div>
-                );
+                  );
+                });
               })}
             </div>
               </div>

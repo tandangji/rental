@@ -63,6 +63,16 @@ const pool = new Pool({
   ssl: dbUrl.includes("sslmode=require") ? { rejectUnauthorized: false } : false,
 });
 
+// 5층 수도 서브계량기 정의
+const WATER_SUB_METERS = {
+  5: [
+    { key: 'hair_cold', label: '헤어 냉수' },
+    { key: 'hair_hot', label: '헤어 온수' },
+    { key: 'laundry_cold', label: '세탁실 냉수' },
+    { key: 'laundry_hot', label: '세탁실 온수' },
+  ]
+};
+
 // ─── DB Init ───────────────────────────────────────────────
 (async () => {
   try {
@@ -438,9 +448,11 @@ const pool = new Pool({
     }
   }
 
-  // ─── meter_readings UNIQUE 제약 변경 (floor 포함) ─────────
+  // ─── meter_readings: sub_meter 컬럼 + UNIQUE 제약 변경 ─────────
+  await pool.query(`ALTER TABLE meter_readings ADD COLUMN IF NOT EXISTS sub_meter TEXT`);
   try { await pool.query(`ALTER TABLE meter_readings DROP CONSTRAINT IF EXISTS meter_readings_tenant_id_year_month_utility_type_key`); } catch {}
-  try { await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meter_readings_unique ON meter_readings (tenant_id, floor, year, month, utility_type)`); } catch {}
+  try { await pool.query(`DROP INDEX IF EXISTS idx_meter_readings_unique`); } catch {}
+  try { await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meter_readings_unique ON meter_readings (tenant_id, floor, year, month, utility_type, COALESCE(sub_meter, ''))`); } catch {}
 
 
   console.log("테이블 초기화 완료");
@@ -928,7 +940,7 @@ const pool = new Pool({
   });
 
   app.post("/meter-readings", async (req, res) => {
-    const { tenant_id, year, month, utility_type, photo_base64, photo_filename, reading_value, floor: reqFloor } = req.body;
+    const { tenant_id, year, month, utility_type, photo_base64, photo_filename, reading_value, floor: reqFloor, sub_meter } = req.body;
     try {
       // Tenant can only upload for themselves
       const targetTenantId = req.user.role === "tenant" ? req.user.id : tenant_id;
@@ -982,16 +994,17 @@ const pool = new Pool({
       }
 
       const now = new Date().toISOString();
+      const subMeterVal = sub_meter || null;
       const { rows } = await pool.query(
-        `INSERT INTO meter_readings (tenant_id, floor, year, month, utility_type, reading_value, photo, photo_filename, uploaded_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (tenant_id, floor, year, month, utility_type)
+        `INSERT INTO meter_readings (tenant_id, floor, year, month, utility_type, reading_value, photo, photo_filename, uploaded_at, sub_meter)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (tenant_id, floor, year, month, utility_type, COALESCE(sub_meter, ''))
          DO UPDATE SET photo = COALESCE($7, meter_readings.photo),
                        photo_filename = COALESCE($8, meter_readings.photo_filename),
                        uploaded_at = CASE WHEN $7 IS NOT NULL THEN $9 ELSE meter_readings.uploaded_at END,
                        reading_value = COALESCE($6, meter_readings.reading_value)
          RETURNING id`,
-        [targetTenantId, targetFloor, year, month, utility_type, reading_value ?? null, photoBuf, safeName, now]
+        [targetTenantId, targetFloor, year, month, utility_type, reading_value ?? null, photoBuf, safeName, now, subMeterVal]
       );
       res.json({ id: rows[0].id });
 
@@ -1168,18 +1181,22 @@ const pool = new Pool({
         const totalCost = buildingBill[totalFields[utype]] || 0;
         if (totalCost === 0) continue;
 
-        // 층별 사용량 조회
+        // 층별 사용량 조회 (sub_meter 포함)
         const { rows: readings } = await pool.query(
-          "SELECT tenant_id, floor, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
+          "SELECT tenant_id, floor, reading_value, sub_meter FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
           [year, month, utype]
         );
 
-        // 층별 사용량 결정
+        // 층별 사용량 결정 (같은 tenant+floor의 sub_meter들 합산)
         const floorUsages = [];
         let totalUsage = 0;
         for (const tf of allFloors) {
-          const reading = readings.find((r) => r.tenant_id === tf.tenant_id && r.floor === tf.floor);
-          const usage = reading?.reading_value != null ? parseFloat(reading.reading_value) : null;
+          const floorReadings = readings.filter((r) => r.tenant_id === tf.tenant_id && r.floor === tf.floor);
+          let usage = null;
+          if (floorReadings.length > 0) {
+            const values = floorReadings.filter(r => r.reading_value != null).map(r => parseFloat(r.reading_value));
+            if (values.length > 0) usage = values.reduce((a, b) => a + b, 0);
+          }
           floorUsages.push({ tenantId: tf.tenant_id, floor: tf.floor, usage });
           if (usage != null && usage > 0) totalUsage += usage;
         }
@@ -1646,9 +1663,9 @@ const pool = new Pool({
       );
       if (allFloors.length === 0) return;
 
-      // 3. 해당 월 층별 사용량 조회
+      // 3. 해당 월 층별 사용량 조회 (sub_meter 포함)
       const { rows: currentReadings } = await pool.query(
-        "SELECT tenant_id, floor, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
+        "SELECT tenant_id, floor, reading_value, sub_meter FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
         [year, month, utilityType]
       );
 
@@ -1662,38 +1679,77 @@ const pool = new Pool({
       if (prevMonth <= 0) { prevMonth += 12; prevYear--; }
 
       const { rows: prevReadings } = await pool.query(
-        "SELECT tenant_id, floor, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
+        "SELECT tenant_id, floor, reading_value, sub_meter FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
         [prevYear, prevMonth, utilityType]
       );
 
-      // 5. 층별 사용량 결정: 미입력 → 전월 1.5배
+      // 5. 층별 사용량 결정: 미입력 → 전월 1.5배 (sub_meter 합산)
       const floorUsages = [];
       let totalUsage = 0;
       const autoFilledTenants = [];
 
       for (const tf of allFloors) {
-        const current = currentReadings.find((r) => r.tenant_id === tf.tenant_id && r.floor === tf.floor);
-        let usage = current?.reading_value != null ? parseFloat(current.reading_value) : null;
+        const subMeters = WATER_SUB_METERS[tf.floor];
+        const currentForFloor = currentReadings.filter((r) => r.tenant_id === tf.tenant_id && r.floor === tf.floor);
 
-        if (usage === null) {
-          const prev = prevReadings.find((r) => r.tenant_id === tf.tenant_id && r.floor === tf.floor);
-          if (prev?.reading_value != null) {
-            usage = Math.round(parseFloat(prev.reading_value) * 1.5 * 100) / 100;
-            const tName = tenants.find((t) => t.id === tf.tenant_id)?.company_name || '';
-            autoFilledTenants.push(`${tf.floor}층 ${tName} (${usage})`);
-            // meter_readings에 자동값 기록
-            await pool.query(
-              `INSERT INTO meter_readings (tenant_id, floor, year, month, utility_type, reading_value)
-               VALUES ($1,$2,$3,$4,$5,$6)
-               ON CONFLICT (tenant_id, floor, year, month, utility_type)
-               DO UPDATE SET reading_value = $6`,
-              [tf.tenant_id, tf.floor, year, month, utilityType, usage]
-            );
+        if (subMeters && utilityType === "water") {
+          // 서브계량기가 있는 층: 각 sub_meter별로 처리 후 합산
+          let floorTotal = 0;
+          let hasAnyValue = false;
+
+          for (const sm of subMeters) {
+            const cur = currentForFloor.find(r => r.sub_meter === sm.key);
+            let val = cur?.reading_value != null ? parseFloat(cur.reading_value) : null;
+
+            if (val === null) {
+              // 전월 해당 sub_meter 값으로 1.5배
+              const prev = prevReadings.find(r => r.tenant_id === tf.tenant_id && r.floor === tf.floor && r.sub_meter === sm.key);
+              if (prev?.reading_value != null) {
+                val = Math.round(parseFloat(prev.reading_value) * 1.5 * 100) / 100;
+                const tName = tenants.find((t) => t.id === tf.tenant_id)?.company_name || '';
+                autoFilledTenants.push(`${tf.floor}층 ${tName} ${sm.label} (${val})`);
+                await pool.query(
+                  `INSERT INTO meter_readings (tenant_id, floor, year, month, utility_type, reading_value, sub_meter)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7)
+                   ON CONFLICT (tenant_id, floor, year, month, utility_type, COALESCE(sub_meter, ''))
+                   DO UPDATE SET reading_value = $6`,
+                  [tf.tenant_id, tf.floor, year, month, utilityType, val, sm.key]
+                );
+              }
+            }
+
+            if (val != null && val > 0) {
+              floorTotal += val;
+              hasAnyValue = true;
+            }
           }
-        }
 
-        floorUsages.push({ tenantId: tf.tenant_id, floor: tf.floor, usage });
-        if (usage != null && usage > 0) totalUsage += usage;
+          floorUsages.push({ tenantId: tf.tenant_id, floor: tf.floor, usage: hasAnyValue ? floorTotal : null });
+          if (hasAnyValue && floorTotal > 0) totalUsage += floorTotal;
+        } else {
+          // 일반 층 (sub_meter 없음): 기존 로직
+          const current = currentForFloor.find(r => !r.sub_meter);
+          let usage = current?.reading_value != null ? parseFloat(current.reading_value) : null;
+
+          if (usage === null) {
+            const prev = prevReadings.find((r) => r.tenant_id === tf.tenant_id && r.floor === tf.floor && !r.sub_meter);
+            if (prev?.reading_value != null) {
+              usage = Math.round(parseFloat(prev.reading_value) * 1.5 * 100) / 100;
+              const tName = tenants.find((t) => t.id === tf.tenant_id)?.company_name || '';
+              autoFilledTenants.push(`${tf.floor}층 ${tName} (${usage})`);
+              await pool.query(
+                `INSERT INTO meter_readings (tenant_id, floor, year, month, utility_type, reading_value)
+                 VALUES ($1,$2,$3,$4,$5,$6)
+                 ON CONFLICT (tenant_id, floor, year, month, utility_type, COALESCE(sub_meter, ''))
+                 DO UPDATE SET reading_value = $6`,
+                [tf.tenant_id, tf.floor, year, month, utilityType, usage]
+              );
+            }
+          }
+
+          floorUsages.push({ tenantId: tf.tenant_id, floor: tf.floor, usage });
+          if (usage != null && usage > 0) totalUsage += usage;
+        }
       }
 
       // 6. 층별 배분 → tenant별 합산
