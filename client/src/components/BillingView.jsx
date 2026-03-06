@@ -254,27 +254,27 @@ export default function BillingView() {
         </div>
       </div>
 
-      {/* 청구서 생성/수정 */}
+      {/* 청구서 발행 */}
       <div className="flex gap-2 mb-4">
         <button
           onClick={handleGenerateRent}
           disabled={generatingRent}
           className="flex items-center justify-center gap-1 px-3 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
         >
-          <Plus className="w-4 h-4" /> {generatingRent ? '발행 중...' : '임대료/관리비'}
+          <Plus className="w-4 h-4" /> {generatingRent ? '발행 중...' : '자동 청구'}
         </button>
+        <label className="flex items-center gap-1 px-3 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 cursor-pointer min-h-[44px]">
+          <Upload className="w-4 h-4" /> 수동 청구
+          <input type="file" accept=".xlsx,.xls" onChange={handleUploadExcel} className="hidden" />
+        </label>
         {bills.length > 0 && (
           <>
             <button
               onClick={handleDownloadTemplate}
               className="flex items-center gap-1 px-3 py-2.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 min-h-[44px]"
             >
-              <Download className="w-3.5 h-3.5" /> 양식 다운로드
+              <Download className="w-3.5 h-3.5" /> 양식
             </button>
-            <label className="flex items-center gap-1 px-3 py-2.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer min-h-[44px]">
-              <Upload className="w-3.5 h-3.5" /> Excel 업로드
-              <input type="file" accept=".xlsx,.xls" onChange={handleUploadExcel} className="hidden" />
-            </label>
             <button
               onClick={handleSendReminder}
               className="flex items-center gap-1 px-3 py-2.5 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600 min-h-[44px]"
