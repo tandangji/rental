@@ -145,8 +145,9 @@ rental/
 | reading_value | NUMERIC(12,2) | 사용량 (건물주 입력) |
 | photo | BYTEA | 계량기 사진 |
 | photo_filename | TEXT | |
+| sub_meter | TEXT | 서브계량기 키 (5층 수도: hair_cold/hair_hot/laundry_cold/laundry_hot, 기타 NULL) |
 | uploaded_at | TIMESTAMP | |
-| UNIQUE(tenant_id, floor, year, month, utility_type) | | |
+| UNIQUE(tenant_id, floor, year, month, utility_type, COALESCE(sub_meter, '')) | | |
 
 ### building_bills (건물 전체 공과금)
 | 컬럼 | 타입 | 설명 |
@@ -401,3 +402,4 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v2.7 | 2026-03-06 | 협력사 납기일 + 지급 관리 — partners에 payment_day 컬럼 추가, GET /partner-payments/schedule API, 설정 서브탭 4번째(지급 관리) 추가, PaymentManage 컴포넌트(월별 지급 현황+요약+토글+추가/삭제), 대시보드 지급 일정 카드(D-day 컬러) |
 | v3.0 | 2026-03-06 | 다중층 입주사 지원 — tenant_floors 테이블 신규, meter_readings.floor 컬럼 추가, 브이모먼트 2+4F 데이터 머지, 층별 공과금 배분→tenant별 합산, 검침 층 탭 UI, 로그인 session.floors 배열, 세금계산서/청구서/Excel 대조 floors 대응 |
 | v3.1 | 2026-03-06 | v3.0 핫픽스 + UX 개선 — 검침 면제(meter_exempt) 플래그, 비밀번호 미변경 시 API 차단 제거, 청구 납부 뱃지+버튼 분리 UI, 입주사 청구서/대시보드 세금계산서 발행 태그, 세금계산서 매월 20일 발행 안내, 검침 업로드 iOS 호환성 개선, 납부일 날짜 포맷팅 |
+| v3.2 | 2026-03-06 | 5층 수도 서브계량기 — meter_readings.sub_meter 컬럼 추가(hair_cold/hair_hot/laundry_cold/laundry_hot), UNIQUE 인덱스 COALESCE(sub_meter,'') 포함, 배분 로직 sub_meter 합산, 자동배분 서브계량기별 1.5배 처리, MeterUpload 4개 카드 UI, MeterOverview 4개 입력 칸 |
