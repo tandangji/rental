@@ -18,8 +18,8 @@ function isUploadPeriod(utilityType) {
   const kst = getKstNow();
   const day = kst.getDate();
   const month = kst.getMonth() + 1;
-  if (utilityType === 'electricity') return day >= 22 && day <= 23;
-  if (utilityType === 'water') return month % 2 === 1 && day >= 6 && day <= 7;
+  if (utilityType === 'electricity') return day === 22;
+  if (utilityType === 'water') return month % 2 === 1 && day === 6;
   return false;
 }
 
@@ -35,8 +35,8 @@ export default function MeterUpload({ user }) {
   const kst = getKstNow();
   const kstDay = kst.getDate();
   const kstMonth = kst.getMonth() + 1;
-  const isElecPeriod = kstDay >= 22 && kstDay <= 23;
-  const isWaterPeriod = kstMonth % 2 === 1 && kstDay >= 6 && kstDay <= 7;
+  const isElecPeriod = kstDay === 22;
+  const isWaterPeriod = kstMonth % 2 === 1 && kstDay === 6;
 
   const loadReadings = async () => {
     try {
@@ -117,8 +117,8 @@ export default function MeterUpload({ user }) {
       <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-2">
         <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
         <div className="text-xs text-amber-800">
-          <p className="font-semibold">전기는 매월 22~23일에 검침 사진을 업로드해주세요.</p>
-          <p className="mt-0.5">수도는 홀수달(1,3,5,7,9,11월) 6~7일에 사진을 업로드해주세요.</p>
+          <p className="font-semibold">전기는 매월 22일에 검침 사진을 업로드해주세요.</p>
+          <p className="mt-0.5">수도는 홀수달(1,3,5,7,9,11월) 6일에 사진을 업로드해주세요.</p>
           <p className="mt-0.5">수도세는 2개월치가 일괄 부과됩니다.</p>
           <p className="mt-0.5">검침사진 미제출 시 전월 사용량의 1.5배로 임시 부과됩니다.</p>
         </div>
@@ -134,8 +134,8 @@ export default function MeterUpload({ user }) {
           const hasPhoto = reading?.uploaded_at;
           const canUpload = !isCurrentMonth || isUploadPeriod(key);
           const disabledMsg = key === 'electricity'
-            ? '검침 기간은 매월 22~23일입니다'
-            : '검침 기간은 홀수달 6~7일입니다';
+            ? '검침 기간은 매월 22일입니다'
+            : '검침 기간은 홀수달 6일입니다';
 
           return (
             <div key={key} className={`rounded-xl border-2 p-4 ${hasPhoto ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white'}`}>

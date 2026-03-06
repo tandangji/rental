@@ -8,6 +8,7 @@ const ITEMS = [
   { field: 'maintenance_paid', label: '관리비', amountField: 'maintenance_fee', dateField: 'maintenance_paid_date' },
   { field: 'electricity_paid', label: '전기', amountField: 'electricity_amount', dateField: 'electricity_paid_date' },
   { field: 'water_paid', label: '수도', amountField: 'water_amount', dateField: 'water_paid_date', noVat: true },
+  { field: 'other_paid', label: '기타', amountField: 'other_amount', dateField: 'other_paid_date', dynamic: true },
 ];
 
 const vat = (n, noVat) => noVat ? 0 : Math.round((n || 0) * 0.1);
@@ -93,6 +94,7 @@ export default function MyBillView({ user, settings }) {
           <li>청구서 보관이 필요한 경우 PDF 다운로드하여 직접 보관하시기 바랍니다.</li>
           <li>관리사무소에서는 별도의 청구서 사본을 제공하지 않습니다.</li>
           <li>납부기한 경과 시 월 2%의 연체이자가 일수 계산으로 가산됩니다.</li>
+          <li>전자세금계산서는 홈택스를 통해 직접 조회하실 수 있습니다.</li>
         </ul>
       </div>
 
@@ -107,16 +109,17 @@ export default function MyBillView({ user, settings }) {
             </div>
 
             <div className="space-y-3">
-              {ITEMS.map(({ field, label, amountField, dateField, noVat }) => {
+              {ITEMS.map(({ field, label, amountField, dateField, noVat, dynamic }) => {
                 const amount = bill[amountField];
                 if (amount === 0) return null;
+                const displayLabel = dynamic ? (bill.other_label || label) : label;
                 const isPaid = bill[field];
                 const vatAmt = vat(amount, noVat);
                 const total = amount + vatAmt;
                 return (
                   <div key={field} className="border-b border-gray-50 last:border-0 pb-2 last:pb-0">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-gray-900">{label}</span>
+                      <span className="text-sm font-medium text-gray-900">{displayLabel}</span>
                       <div className="text-right">
                         <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
                           isPaid

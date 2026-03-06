@@ -162,6 +162,12 @@ const pool = new Pool({
     )
   `);
 
+  // monthly_bills: 기타(other) 항목 컬럼 추가
+  await pool.query(`ALTER TABLE monthly_bills ADD COLUMN IF NOT EXISTS other_amount INTEGER NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE monthly_bills ADD COLUMN IF NOT EXISTS other_label TEXT`);
+  await pool.query(`ALTER TABLE monthly_bills ADD COLUMN IF NOT EXISTS other_paid BOOLEAN DEFAULT FALSE`);
+  await pool.query(`ALTER TABLE monthly_bills ADD COLUMN IF NOT EXISTS other_paid_date DATE`);
+
   // meter_readings
   await pool.query(`
     CREATE TABLE IF NOT EXISTS meter_readings (
@@ -999,7 +1005,7 @@ const pool = new Pool({
   // Toggle payment status
   app.patch("/monthly-bills/:id/pay", requireAdmin, async (req, res) => {
     const { field } = req.body; // e.g. 'rent_paid', 'gas_paid', etc.
-    const validFields = ["rent_paid", "maintenance_paid", "electricity_paid", "water_paid"];
+    const validFields = ["rent_paid", "maintenance_paid", "electricity_paid", "water_paid", "other_paid"];
     if (!validFields.includes(field)) {
       return res.status(400).json({ error: "잘못된 필드입니다" });
     }
@@ -1021,12 +1027,28 @@ const pool = new Pool({
     }
   });
 
+  // Update other (기타) item
+  app.patch("/monthly-bills/:id/other", requireAdmin, async (req, res) => {
+    const { other_amount, other_label } = req.body;
+    try {
+      await pool.query(
+        `UPDATE monthly_bills SET other_amount = $1, other_label = $2 WHERE id = $3`,
+        [other_amount || 0, other_label || null, req.params.id]
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
   // ─── Tax Invoices API (항목별 개별 발행) ─────────────────
   const ITEM_TYPES = [
     { type: "rent", name: "임대료", amountField: "rent_amount" },
     { type: "maintenance", name: "관리비", amountField: "maintenance_fee" },
     { type: "electricity", name: "전기", amountField: "electricity_amount" },
     { type: "water", name: "수도", amountField: "water_amount" },
+    { type: "other", name: "기타", amountField: "other_amount" },
   ];
 
   app.get("/tax-invoices", async (req, res) => {
@@ -1036,6 +1058,7 @@ const pool = new Pool({
       let billQuery = `
         SELECT mb.id as bill_id, mb.tenant_id, mb.year, mb.month,
                mb.rent_amount, mb.maintenance_fee, mb.electricity_amount, mb.water_amount,
+               mb.other_amount, mb.other_label,
                t.floor, t.company_name, t.business_number, t.representative, t.address,
                t.business_type, t.business_item, t.email,
                t.tax_company_name, t.tax_representative, t.tax_address,
@@ -1098,7 +1121,7 @@ const pool = new Pool({
             tax_email: bill.tax_email || "",
             tax_email2: bill.tax_email2 || "",
             item_type: type,
-            item_name: name,
+            item_name: type === "other" ? (bill.other_label || "기타") : name,
             supply_amount: amount,
             tax_amount: taxAmount,
             total_amount: amount + taxAmount,

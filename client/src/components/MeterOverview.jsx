@@ -111,7 +111,7 @@ export default function MeterOverview() {
         <p>사진을 확인하고 각 층별 사용량을 입력하세요. 사용량 기준으로 공과금이 배분됩니다.</p>
         <p className="flex items-center gap-1">
           <Clock className="w-3 h-3" />
-          <span><b>전기</b> 22~23일 업로드 → 24일 자동배분 | <b>수도</b> 홀수달 6~7일 업로드 → 8일 자동배분</span>
+          <span><b>전기</b> 22일 업로드 → 24일 자동배분 | <b>수도</b> 홀수달 6일 업로드 → 8일 자동배분</span>
         </p>
         <p>미제출 입주사는 전월 사용량의 1.5배로 자동 적용됩니다.</p>
       </div>

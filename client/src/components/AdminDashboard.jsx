@@ -115,9 +115,9 @@ export default function AdminDashboard() {
             <div className="flex items-center gap-2">
               <Zap className="w-3.5 h-3.5 text-yellow-500" />
               <span className="text-gray-700">
-                전기: 매월 22~23일 업로드 → <b>24일 자동 배분</b>
+                전기: 매월 22일 업로드 → <b>24일 자동 배분</b>
               </span>
-              {kstDay >= 22 && kstDay <= 23 ? (
+              {kstDay === 22 ? (
                 <span className="ml-auto px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[10px] font-medium">진행 중</span>
               ) : kstDay < 22 ? (
                 <span className="ml-auto px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px]">{22 - kstDay}일 후</span>
@@ -131,9 +131,9 @@ export default function AdminDashboard() {
               <div className="flex items-center gap-2">
                 <Droplets className="w-3.5 h-3.5 text-blue-500" />
                 <span className="text-gray-700">
-                  수도: 홀수달 6~7일 업로드 → <b>8일 자동 배분</b>
+                  수도: 홀수달 6일 업로드 → <b>8일 자동 배분</b>
                 </span>
-                {kstDay >= 6 && kstDay <= 7 ? (
+                {kstDay === 6 ? (
                   <span className="ml-auto px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-medium">진행 중</span>
                 ) : kstDay < 6 ? (
                   <span className="ml-auto px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px]">{6 - kstDay}일 후</span>

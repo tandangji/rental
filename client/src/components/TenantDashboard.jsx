@@ -22,8 +22,8 @@ export default function TenantDashboard({ user, settings }) {
   const [year, setYear] = useState(prevY);
   const [month, setMonth] = useState(prevM);
   const isCurrentMonth = year === kst.getFullYear() && month === kstMonth;
-  const isElecPeriod = isCurrentMonth && kstDay >= 22 && kstDay <= 23;
-  const isWaterPeriod = isCurrentMonth && kstMonth % 2 === 1 && kstDay >= 6 && kstDay <= 7;
+  const isElecPeriod = isCurrentMonth && kstDay === 22;
+  const isWaterPeriod = isCurrentMonth && kstMonth % 2 === 1 && kstDay === 6;
   const [bill, setBill] = useState(null);
   const [readings, setReadings] = useState([]);
 
@@ -194,8 +194,8 @@ export default function TenantDashboard({ user, settings }) {
         <p className="text-xs font-semibold text-gray-700 mb-1">유의사항</p>
         <ul className="text-xs text-gray-600 space-y-0.5 list-disc list-inside">
           <li>임대료·관리비·전기는 부가세 10% 별도이며, 수도세는 면세입니다.</li>
-          <li>전기는 매월 22~23일에 검침 사진을 업로드해주세요.</li>
-          <li>수도는 홀수달(1,3,5,7,9,11월) 6~7일에 사진을 업로드해주세요.</li>
+          <li>전기는 매월 22일에 검침 사진을 업로드해주세요.</li>
+          <li>수도는 홀수달(1,3,5,7,9,11월) 6일에 사진을 업로드해주세요.</li>
           <li>수도세는 2개월치가 일괄 부과됩니다.</li>
           <li>검침사진 미제출 시 전월 사용량의 1.5배로 임시 부과됩니다.</li>
           <li>납부기한 경과 시에는 월 2%의 연체이자가 일수 계산으로 가산됩니다.</li>
