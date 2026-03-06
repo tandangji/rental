@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from './utils/api';
 import LoginForm from './components/LoginForm';
 import AdminDashboard from './components/AdminDashboard';
-import TenantManage from './components/TenantManage';
 import MeterOverview from './components/MeterOverview';
 import BillingView from './components/BillingView';
 import TaxInvoiceView from './components/TaxInvoiceView';
@@ -13,11 +12,10 @@ import MyBillView from './components/MyBillView';
 import TenantPasswordSetup from './components/TenantPasswordSetup';
 import InquiryForm from './components/InquiryForm';
 import InquiryList from './components/InquiryList';
-import { Building2, LogOut, LayoutDashboard, Users, Gauge, Receipt, FileText, Settings, Home, Camera, CreditCard, KeyRound, MessageCircle } from 'lucide-react';
+import { Building2, LogOut, LayoutDashboard, Gauge, Receipt, FileText, Settings, Home, Camera, CreditCard, KeyRound, MessageCircle } from 'lucide-react';
 
 const ADMIN_TABS = [
   { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
-  { id: 'tenants', label: '입주사', icon: Users },
   { id: 'meters', label: '검침', icon: Gauge },
   { id: 'billing', label: '청구', icon: Receipt },
   { id: 'tax', label: '세금계산서', icon: FileText },
@@ -89,7 +87,6 @@ export default function App() {
     if (isAdmin) {
       switch (activeTab) {
         case 'dashboard': return <AdminDashboard />;
-        case 'tenants': return <TenantManage />;
         case 'meters': return <MeterOverview />;
         case 'billing': return <BillingView />;
         case 'tax': return <TaxInvoiceView />;

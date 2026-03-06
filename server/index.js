@@ -276,6 +276,43 @@ const pool = new Pool({
   // 새 UNIQUE INDEX 생성
   try { await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_tax_inv_unique ON tax_invoices (tenant_id, year, month, item_type)"); } catch {}
 
+  // partners (협력사/직원)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS partners (
+      id SERIAL PRIMARY KEY,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      contact_phone TEXT,
+      memo TEXT,
+      business_number TEXT,
+      company_name TEXT,
+      representative TEXT,
+      bank_name TEXT,
+      bank_account TEXT,
+      bank_holder TEXT,
+      is_active BOOLEAN DEFAULT TRUE,
+      biz_doc BYTEA,
+      biz_doc_filename TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // partner_payments (협력사 지급내역)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS partner_payments (
+      id SERIAL PRIMARY KEY,
+      partner_id INTEGER REFERENCES partners(id) ON DELETE CASCADE,
+      year INTEGER NOT NULL,
+      month INTEGER NOT NULL,
+      amount INTEGER NOT NULL DEFAULT 0,
+      payment_date DATE,
+      memo TEXT,
+      is_paid BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(partner_id, year, month)
+    )
+  `);
+
   // inquiries (문의/고장신고)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS inquiries (
@@ -1531,6 +1568,222 @@ const pool = new Pool({
 
   cron.schedule("0 0 * * *", () => {
     checkUnpaidAlert();
+  });
+
+  // ─── Partners API ─────────────────────────────────────────
+  app.get("/partners", requireAdmin, async (req, res) => {
+    const { type } = req.query;
+    try {
+      let query = "SELECT id, type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, biz_doc_filename, created_at FROM partners";
+      const params = [];
+      if (type) {
+        query += " WHERE type = $1";
+        params.push(type);
+      }
+      query += " ORDER BY created_at DESC";
+      const { rows } = await pool.query(query, params);
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  app.post("/partners", requireAdmin, async (req, res) => {
+    const { type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, biz_doc_base64, biz_doc_filename } = req.body;
+    if (!type || !name) {
+      return res.status(400).json({ error: "유형과 이름은 필수입니다" });
+    }
+    if (!["employee", "vendor"].includes(type)) {
+      return res.status(400).json({ error: "유형은 employee 또는 vendor만 가능합니다" });
+    }
+    try {
+      let docBuf = null;
+      let safeName = null;
+      if (biz_doc_base64) {
+        const base64Data = biz_doc_base64.replace(/^data:[^;]+;base64,/, "");
+        docBuf = Buffer.from(base64Data, "base64");
+        if (docBuf.length > 5 * 1024 * 1024) {
+          return res.status(400).json({ error: "파일 크기는 5MB 이하여야 합니다" });
+        }
+        const isJpeg = docBuf[0] === 0xFF && docBuf[1] === 0xD8 && docBuf[2] === 0xFF;
+        const isPng = docBuf[0] === 0x89 && docBuf[1] === 0x50 && docBuf[2] === 0x4E && docBuf[3] === 0x47;
+        if (!isJpeg && !isPng) {
+          return res.status(400).json({ error: "JPEG 또는 PNG 이미지만 업로드 가능합니다" });
+        }
+      }
+      if (biz_doc_filename) {
+        safeName = path.basename(biz_doc_filename).replace(/[^a-zA-Z0-9가-힣._-]/g, "_");
+      }
+      const { rows } = await pool.query(
+        `INSERT INTO partners (type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, biz_doc, biz_doc_filename)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+        [type, name, contact_phone || null, memo || null, business_number || null, company_name || null, representative || null, bank_name || null, bank_account || null, bank_holder || null, is_active !== false, docBuf, safeName]
+      );
+      res.json({ id: rows[0].id });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  app.put("/partners/:id", requireAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, biz_doc_base64, biz_doc_filename } = req.body;
+    try {
+      let docBuf = undefined;
+      let safeName = undefined;
+      if (biz_doc_base64) {
+        const base64Data = biz_doc_base64.replace(/^data:[^;]+;base64,/, "");
+        docBuf = Buffer.from(base64Data, "base64");
+        if (docBuf.length > 5 * 1024 * 1024) {
+          return res.status(400).json({ error: "파일 크기는 5MB 이하여야 합니다" });
+        }
+        const isJpeg = docBuf[0] === 0xFF && docBuf[1] === 0xD8 && docBuf[2] === 0xFF;
+        const isPng = docBuf[0] === 0x89 && docBuf[1] === 0x50 && docBuf[2] === 0x4E && docBuf[3] === 0x47;
+        if (!isJpeg && !isPng) {
+          return res.status(400).json({ error: "JPEG 또는 PNG 이미지만 업로드 가능합니다" });
+        }
+        safeName = biz_doc_filename ? path.basename(biz_doc_filename).replace(/[^a-zA-Z0-9가-힣._-]/g, "_") : null;
+      }
+
+      let query = `UPDATE partners SET type=COALESCE($1,type), name=COALESCE($2,name), contact_phone=$3, memo=$4, business_number=$5, company_name=$6, representative=$7, bank_name=$8, bank_account=$9, bank_holder=$10, is_active=COALESCE($11,is_active)`;
+      const params = [type, name, contact_phone ?? null, memo ?? null, business_number ?? null, company_name ?? null, representative ?? null, bank_name ?? null, bank_account ?? null, bank_holder ?? null, is_active];
+      if (docBuf !== undefined) {
+        query += `, biz_doc=$${params.length + 1}, biz_doc_filename=$${params.length + 2}`;
+        params.push(docBuf, safeName);
+      }
+      query += ` WHERE id=$${params.length + 1}`;
+      params.push(id);
+      await pool.query(query, params);
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  app.delete("/partners/:id", requireAdmin, async (req, res) => {
+    try {
+      await pool.query("DELETE FROM partners WHERE id = $1", [req.params.id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  app.get("/partners/:id/biz-doc", requireAdmin, async (req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT biz_doc, biz_doc_filename FROM partners WHERE id = $1", [req.params.id]);
+      if (rows.length === 0 || !rows[0].biz_doc) {
+        return res.status(404).json({ error: "파일이 없습니다" });
+      }
+      const buf = rows[0].biz_doc;
+      const filename = rows[0].biz_doc_filename || "document.jpg";
+      const ext = filename.split(".").pop().toLowerCase();
+      const mimeMap = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png" };
+      res.set("Content-Type", mimeMap[ext] || "image/jpeg");
+      res.send(buf);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  // ─── Partner Payments API ───────────────────────────────────
+  app.get("/partner-payments", requireAdmin, async (req, res) => {
+    const { partner_id, year, month } = req.query;
+    try {
+      let query = "SELECT pp.*, p.name as partner_name, p.type as partner_type FROM partner_payments pp JOIN partners p ON pp.partner_id = p.id WHERE 1=1";
+      const params = [];
+      if (partner_id) {
+        query += ` AND pp.partner_id = $${params.length + 1}`;
+        params.push(Number(partner_id));
+      }
+      if (year) {
+        query += ` AND pp.year = $${params.length + 1}`;
+        params.push(Number(year));
+      }
+      if (month) {
+        query += ` AND pp.month = $${params.length + 1}`;
+        params.push(Number(month));
+      }
+      query += " ORDER BY pp.year DESC, pp.month DESC";
+      const { rows } = await pool.query(query, params);
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  app.post("/partner-payments", requireAdmin, async (req, res) => {
+    const { partner_id, year, month, amount, payment_date, memo, is_paid } = req.body;
+    if (!partner_id || !year || !month) {
+      return res.status(400).json({ error: "협력사, 연도, 월은 필수입니다" });
+    }
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO partner_payments (partner_id, year, month, amount, payment_date, memo, is_paid)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (partner_id, year, month) DO UPDATE SET
+           amount=$4, payment_date=$5, memo=$6, is_paid=$7
+         RETURNING id`,
+        [partner_id, year, month, amount || 0, payment_date || null, memo || null, is_paid || false]
+      );
+      res.json({ id: rows[0].id });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  app.patch("/partner-payments/:id/pay", requireAdmin, async (req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT is_paid FROM partner_payments WHERE id = $1", [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: "지급 내역을 찾을 수 없습니다" });
+      const newVal = !rows[0].is_paid;
+      const today = new Date().toISOString().split("T")[0];
+      await pool.query(
+        "UPDATE partner_payments SET is_paid = $1, payment_date = $2 WHERE id = $3",
+        [newVal, newVal ? today : null, req.params.id]
+      );
+      res.json({ success: true, is_paid: newVal });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  app.delete("/partner-payments/:id", requireAdmin, async (req, res) => {
+    try {
+      await pool.query("DELETE FROM partner_payments WHERE id = $1", [req.params.id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  app.get("/partner-payments/summary", requireAdmin, async (req, res) => {
+    try {
+      const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const { rows } = await pool.query(
+        `SELECT is_paid, COUNT(*)::int as count, COALESCE(SUM(amount),0)::int as total
+         FROM partner_payments WHERE year=$1 AND month=$2
+         GROUP BY is_paid`,
+        [year, month]
+      );
+      const paid = rows.find((r) => r.is_paid === true) || { count: 0, total: 0 };
+      const unpaid = rows.find((r) => r.is_paid === false) || { count: 0, total: 0 };
+      res.json({ year, month, paid: { count: paid.count, total: paid.total }, unpaid: { count: unpaid.count, total: unpaid.total } });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
   });
 
   // ─── Inquiries API ────────────────────────────────────────

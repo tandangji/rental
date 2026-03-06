@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Users, Receipt, Camera, AlertTriangle, Check, TrendingUp, Zap, Droplets, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Receipt, Camera, AlertTriangle, Check, TrendingUp, Zap, Droplets, Clock, ChevronLeft, ChevronRight, Handshake } from 'lucide-react';
 
 export default function AdminDashboard() {
   const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
@@ -13,6 +13,7 @@ export default function AdminDashboard() {
   const [tenants, setTenants] = useState([]);
   const [bills, setBills] = useState([]);
   const [readings, setReadings] = useState([]);
+  const [partnerSummary, setPartnerSummary] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -27,7 +28,15 @@ export default function AdminDashboard() {
     } catch {}
   }, [year, month]);
 
+  const loadPartnerSummary = useCallback(async () => {
+    try {
+      const res = await authFetch(`${API_BASE}/partner-payments/summary`);
+      if (res.ok) setPartnerSummary(await res.json());
+    } catch {}
+  }, []);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadPartnerSummary(); }, [loadPartnerSummary]);
 
   // 월 이동
   const goMonth = (delta) => {
@@ -144,6 +153,30 @@ export default function AdminDashboard() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 협력사 지급 현황 */}
+      {partnerSummary && (partnerSummary.unpaid.count > 0 || partnerSummary.paid.count > 0) && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+          <h3 className="font-semibold text-gray-900 text-sm mb-2 flex items-center gap-1.5">
+            <Handshake className="w-4 h-4 text-gray-500" /> 협력사 지급 현황
+            <span className="text-[10px] text-gray-400 font-normal ml-1">{partnerSummary.year}년 {partnerSummary.month}월</span>
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div className={`rounded-lg p-3 ${partnerSummary.unpaid.count > 0 ? 'bg-amber-50' : 'bg-gray-50'}`}>
+              <p className="text-[10px] text-gray-500 mb-0.5">미지급</p>
+              <p className={`text-sm font-bold ${partnerSummary.unpaid.count > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+                {fmt(partnerSummary.unpaid.total)}원
+              </p>
+              <p className="text-[10px] text-gray-400">{partnerSummary.unpaid.count}건</p>
+            </div>
+            <div className="bg-green-50 rounded-lg p-3">
+              <p className="text-[10px] text-gray-500 mb-0.5">지급 완료</p>
+              <p className="text-sm font-bold text-green-700">{fmt(partnerSummary.paid.total)}원</p>
+              <p className="text-[10px] text-gray-400">{partnerSummary.paid.count}건</p>
+            </div>
           </div>
         </div>
       )}

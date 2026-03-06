@@ -60,7 +60,9 @@ rental/
             ├── BuildingBillForm.jsx   # 건물 전체 공과금 입력 (아코디언)
             ├── BillingView.jsx        # 건물주 청구서 관리
             ├── TaxInvoiceView.jsx     # 세금계산서 관리
-            ├── SettingsView.jsx       # 시스템 설정
+            ├── SettingsView.jsx       # 설정 (서브탭: 기본 설정/입주사/협력사)
+            ├── PartnerManage.jsx      # 협력사 CRUD 목록 + 지급내역
+            ├── PartnerForm.jsx        # 협력사 등록/수정 모달
             ├── TenantDashboard.jsx    # 입주사 홈 (계약정보+청구)
             ├── MyBillView.jsx         # 입주사 청구서 (PDF 다운로드)
             ├── BankInfo.jsx           # 입금 계좌 안내 (복사 기능)
@@ -75,7 +77,7 @@ rental/
 | 건물주 | ADMIN_PASSWORD | `admin` | 전체 관리 |
 | 입주사 | 업체명 + 비밀번호 | `tenant` | 본인 층만 조회/업로드 |
 
-## DB 스키마 (6개 테이블)
+## DB 스키마 (8개 테이블)
 
 ### tenants (입주사)
 | 컬럼 | 타입 | 설명 |
@@ -164,6 +166,36 @@ rental/
 ### settings (시스템 설정)
 key-value 구조: building_name, landlord_name, landlord_business_number, landlord_phone, bank_name, bank_account, bank_holder, sms_api_key, sms_sender_number, tax_supplier_company, tax_supplier_name, tax_supplier_biz_no, tax_supplier_address, tax_supplier_business_type, tax_supplier_business_item, tax_supplier_email
 
+### partners (협력사/직원)
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | |
+| type | TEXT NOT NULL | 'employee' / 'vendor' |
+| name | TEXT NOT NULL | 이름/업체명 |
+| contact_phone | TEXT | 연락처 |
+| memo | TEXT | 메모 |
+| business_number | TEXT | 사업자등록번호 |
+| company_name | TEXT | 회사명 |
+| representative | TEXT | 대표자 |
+| bank_name | TEXT | 은행명 |
+| bank_account | TEXT | 계좌번호 |
+| bank_holder | TEXT | 예금주 |
+| is_active | BOOLEAN | 활성 여부 |
+| biz_doc | BYTEA | 사업자등록증 이미지 |
+| biz_doc_filename | TEXT | 파일명 |
+
+### partner_payments (협력사 지급내역)
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | |
+| partner_id | FK → partners | |
+| year, month | INTEGER | |
+| amount | INTEGER | 지급액 |
+| payment_date | DATE | 지급일 |
+| memo | TEXT | 메모 |
+| is_paid | BOOLEAN | 지급 완료 여부 |
+| UNIQUE(partner_id, year, month) | | |
+
 ## API 엔드포인트
 
 ### 인증
@@ -210,6 +242,24 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 |--------|------|------|------|
 | GET | /tax-invoices | 인증 | 항목별 목록 |
 | PATCH | /tax-invoices/:billId/issue | admin | 발행 처리 (item_type 지정) |
+
+### 협력사 (requireAdmin)
+| Method | Path | 설명 |
+|--------|------|------|
+| GET | /partners | 목록 (?type=employee/vendor) |
+| POST | /partners | 등록 (biz_doc_base64 포함) |
+| PUT | /partners/:id | 수정 |
+| DELETE | /partners/:id | 삭제 (cascade) |
+| GET | /partners/:id/biz-doc | 사업자등록증 이미지 |
+
+### 협력사 지급 (requireAdmin)
+| Method | Path | 설명 |
+|--------|------|------|
+| GET | /partner-payments | 목록 (?partner_id, ?year, ?month) |
+| POST | /partner-payments | 등록 (UPSERT) |
+| PATCH | /partner-payments/:id/pay | 지급 토글 |
+| DELETE | /partner-payments/:id | 삭제 |
+| GET | /partner-payments/summary | 대시보드 요약 (이번 달) |
 
 ### 문의 (Inquiries)
 | Method | Path | 권한 | 설명 |
@@ -328,3 +378,4 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v2.1 | 2026-03-05 | 홈택스 XLSX 세금계산서 — CSV→XLSX 변환(59컬럼 홈택스 양식), 공급자/공급받는자 정보 별도 관리(settings+tenants tax_*), 동적 월 품목명, 수도 면세 제외 |
 | v2.2 | 2026-03-06 | 기타(other) 청구 항목 추가 — other_amount/other_label/other_paid 컬럼, 인라인 편집 UI, 세금계산서 자동 포함, 검침일 단일화(22일/6일), 전자세금계산서 홈택스 안내 추가 |
 | v2.3 | 2026-03-06 | Excel 대조 기능 — 양식 다운로드(XLSX), 업로드→파싱→대조 테이블(일치/차이/신규 하이라이트), 전체 반영(bulk-update API) |
+| v2.4 | 2026-03-06 | 협력사 관리 + 설정 서브탭 — partners/partner_payments 테이블, CRUD+지급내역 API 9개, 설정 서브탭(기본 설정/입주사/협력사), 하단 네비 7→6탭, 대시보드 지급 현황 카드 |

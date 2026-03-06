@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Save, Building2, CreditCard, MessageSquare, Bell, FileText } from 'lucide-react';
+import { Save, Building2, CreditCard, MessageSquare, Bell, FileText, Settings, Users, Handshake } from 'lucide-react';
+import TenantManage from './TenantManage';
+import PartnerManage from './PartnerManage';
 
 const FIELDS = [
   { section: 'building', icon: Building2, title: '건물 정보', fields: [
@@ -29,7 +31,13 @@ const FIELDS = [
   ]},
 ];
 
-export default function SettingsView({ settings, onSaved }) {
+const SUB_TABS = [
+  { id: 'general', label: '기본 설정', icon: Settings },
+  { id: 'tenants', label: '입주사', icon: Users },
+  { id: 'partners', label: '협력사', icon: Handshake },
+];
+
+function SettingsGeneral({ settings, onSaved }) {
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -65,8 +73,7 @@ export default function SettingsView({ settings, onSaved }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold text-gray-900">시스템 설정</h2>
+      <div className="flex items-center justify-end mb-4">
         <button onClick={handleSave} disabled={saving} className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 min-h-[44px]">
           <Save className="w-4 h-4" /> {saving ? '저장 중...' : '저장'}
         </button>
@@ -131,6 +138,43 @@ export default function SettingsView({ settings, onSaved }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+export default function SettingsView({ settings, onSaved }) {
+  const [subTab, setSubTab] = useState('general');
+
+  return (
+    <div>
+      <h2 className="text-lg font-bold text-gray-900 mb-3">설정</h2>
+
+      {/* 서브탭 */}
+      <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1">
+        {SUB_TABS.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = subTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setSubTab(tab.id)}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                isActive
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 서브탭 콘텐츠 */}
+      {subTab === 'general' && <SettingsGeneral settings={settings} onSaved={onSaved} />}
+      {subTab === 'tenants' && <TenantManage />}
+      {subTab === 'partners' && <PartnerManage />}
     </div>
   );
 }
