@@ -76,15 +76,15 @@ rental/
 | 역할 | 로그인 방식 | session.role | 접근 범위 |
 |------|------------|-------------|----------|
 | 건물주 | ADMIN_PASSWORD | `admin` | 전체 관리 |
-| 입주사 | 업체명 + 비밀번호 | `tenant` | 본인 층만 조회/업로드 |
+| 입주사 | 업체명 + 비밀번호 | `tenant` | 본인 층(들)만 조회/업로드, session.floors 배열 |
 
-## DB 스키마 (8개 테이블)
+## DB 스키마 (9개 테이블)
 
 ### tenants (입주사)
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
 | id | SERIAL PK | |
-| floor | INTEGER UNIQUE | 층수 |
+| floor | INTEGER (nullable) | 대표 층수 (레거시, tenant_floors 사용 권장) |
 | company_name | TEXT | 업체명 |
 | business_number | TEXT | 사업자등록번호 |
 | representative | TEXT | 대표자명 |
@@ -110,6 +110,13 @@ rental/
 | tax_email | TEXT | 세금계산서 공급받는자 이메일1 |
 | tax_email2 | TEXT | 세금계산서 공급받는자 이메일2 |
 
+### tenant_floors (입주사 층 매핑 — 다중층 지원)
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | SERIAL PK | |
+| tenant_id | FK → tenants | |
+| floor | INTEGER UNIQUE NOT NULL | 층수 |
+
 ### monthly_bills (월별 청구서)
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
@@ -132,13 +139,14 @@ rental/
 |------|------|------|
 | id | SERIAL PK | |
 | tenant_id | FK → tenants | |
+| floor | INTEGER | 층수 (다중층 tenant 구분) |
 | year, month | INTEGER | |
 | utility_type | TEXT | electricity / water |
 | reading_value | NUMERIC(12,2) | 사용량 (건물주 입력) |
 | photo | BYTEA | 계량기 사진 |
 | photo_filename | TEXT | |
 | uploaded_at | TIMESTAMP | |
-| UNIQUE(tenant_id, year, month, utility_type) | | |
+| UNIQUE(tenant_id, floor, year, month, utility_type) | | |
 
 ### building_bills (건물 전체 공과금)
 | 컬럼 | 타입 | 설명 |
@@ -290,13 +298,15 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 
 ## 공과금 배분 로직
 
-1. 각 층 사용량 = `reading_value` (당월 입력값 그대로)
-2. 총 사용량 = 전체 층 사용량 합계
-3. 각 층 배분 = 건물 전체 공과금 × (해당 층 사용량 / 총 사용량)
-4. `Math.round()` 처리, 반올림 오차는 마지막 층에서 보정
-5. 사용량 0인 층은 제외, 전체 0이면 균등 배분
-6. 미제출 입주사: 전월(수도: 2달 전 홀수달) reading_value × 1.5 자동 적용
-7. 전월 데이터도 없으면 균등 배분에 포함
+1. `tenant_floors` 기준 활성 층 목록 조회
+2. 각 층 사용량 = `reading_value` (당월 입력값 그대로, `meter_readings.floor` 기준)
+3. 총 사용량 = 전체 층 사용량 합계
+4. **층별 배분** = 건물 전체 공과금 × (해당 층 사용량 / 총 사용량)
+5. **동일 tenant의 층별 배분액 합산** → `monthly_bills` 1건 (tenant 단위)
+6. `Math.round()` 처리, 반올림 오차는 마지막 항목에서 보정
+7. 사용량 0인 층은 제외, 전체 0이면 균등 배분 (층 수 기준)
+8. 미제출: 전월(수도: 2달 전 홀수달) reading_value × 1.5 자동 적용
+9. 전월 데이터도 없으면 균등 배분에 포함
 
 ## 부가세 처리
 
@@ -389,3 +399,4 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v2.5 | 2026-03-06 | 세금계산서 수동 관리 — tax_invoices 독립 CRUD(초안 생성/추가/수정/삭제/발행 토글), item_name 컬럼 추가, monthly_bills 파생 제거, TaxInvoiceForm 모달 신규 |
 | v2.6 | 2026-03-06 | 청구 중심 관리 — v2.5 세금계산서 독립 CRUD 롤백, monthly_bills를 유일한 원본(single source of truth)으로 복원. PUT/DELETE /monthly-bills/:id 추가(금액 수정/삭제), BillingView 인라인 편집+삭제 UI, 납부 버튼 '완료'→'입금완료', TaxInvoiceForm 삭제, 세금계산서 발행 토글 billId+item_type 방식 복원 |
 | v2.7 | 2026-03-06 | 협력사 납기일 + 지급 관리 — partners에 payment_day 컬럼 추가, GET /partner-payments/schedule API, 설정 서브탭 4번째(지급 관리) 추가, PaymentManage 컴포넌트(월별 지급 현황+요약+토글+추가/삭제), 대시보드 지급 일정 카드(D-day 컬러) |
+| v3.0 | 2026-03-06 | 다중층 입주사 지원 — tenant_floors 테이블 신규, meter_readings.floor 컬럼 추가, 브이모먼트 2+4F 데이터 머지, 층별 공과금 배분→tenant별 합산, 검침 층 탭 UI, 로그인 session.floors 배열, 세금계산서/청구서/Excel 대조 floors 대응 |

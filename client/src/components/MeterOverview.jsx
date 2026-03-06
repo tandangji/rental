@@ -31,8 +31,8 @@ export default function MeterOverview() {
 
   useEffect(() => { load(); }, [load]);
 
-  const getReading = (tenantId, utype) =>
-    readings.find((r) => r.tenant_id === tenantId && r.utility_type === utype);
+  const getReading = (tenantId, utype, floor) =>
+    readings.find((r) => r.tenant_id === tenantId && r.utility_type === utype && (!floor || r.floor === floor));
 
   const handleSaveReading = async (readingId) => {
     try {
@@ -46,7 +46,7 @@ export default function MeterOverview() {
     } catch {}
   };
 
-  const handleCreateAndSave = async (tenantId, utilityType) => {
+  const handleCreateAndSave = async (tenantId, utilityType, floor) => {
     try {
       await authFetch(`${API_BASE}/meter-readings`, {
         method: 'POST',
@@ -56,6 +56,7 @@ export default function MeterOverview() {
           year, month,
           utility_type: utilityType,
           reading_value: editValue ? Number(editValue) : null,
+          floor,
         }),
       });
       setEditingId(null);
@@ -135,7 +136,7 @@ export default function MeterOverview() {
           {smsResult.targets?.length > 0 && (
             <ul className="mt-1 text-xs">
               {smsResult.targets.map((t, i) => (
-                <li key={i}>{t.floor}층 {t.company} — 미업로드 {t.missing}건</li>
+                <li key={i}>{t.floors || t.floor}층 {t.company} — 미업로드 {t.missing}건</li>
               ))}
             </ul>
           )}
@@ -145,21 +146,30 @@ export default function MeterOverview() {
 
       {/* Overview cards — 3열 그리드 (가스 | 전기 | 수도) */}
       <div className="space-y-3">
-        {activeTenants.map((tenant) => (
+        {activeTenants.map((tenant) => {
+          const tenantFloors = tenant.floors || (tenant.floor != null ? [tenant.floor] : []);
+          const isMultiFloor = tenantFloors.length > 1;
+
+          return (
           <div key={tenant.id} className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center gap-2 mb-3">
               <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
-                {tenant.floor}F
+                {tenantFloors.join(',')}F
               </span>
               <span className="font-semibold text-gray-900 text-sm">{tenant.company_name}</span>
             </div>
 
-            <div className={`grid ${isWaterMonth ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
+            {tenantFloors.map((floorNum) => (
+              <div key={floorNum} className="mb-2">
+                {isMultiFloor && (
+                  <p className="text-xs font-medium text-gray-500 mb-1.5">{floorNum}층</p>
+                )}
+                <div className={`grid ${isWaterMonth ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
               {visibleTypes.map(({ key, label, unit, icon: Icon, color }) => {
-                const reading = getReading(tenant.id, key);
+                const reading = getReading(tenant.id, key, floorNum);
                 const hasPhoto = !!reading?.uploaded_at;
                 const hasValue = reading?.reading_value != null;
-                const editKey = `${tenant.id}-${key}`;
+                const editKey = `${tenant.id}-${floorNum}-${key}`;
                 const isEditing = editingId === editKey;
 
                 return (
@@ -209,7 +219,7 @@ export default function MeterOverview() {
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               if (reading) handleSaveReading(reading.id);
-                              else handleCreateAndSave(tenant.id, key);
+                              else handleCreateAndSave(tenant.id, key, floorNum);
                             }
                             if (e.key === 'Escape') setEditingId(null);
                           }}
@@ -218,7 +228,7 @@ export default function MeterOverview() {
                           <button
                             onClick={() => {
                               if (reading) handleSaveReading(reading.id);
-                              else handleCreateAndSave(tenant.id, key);
+                              else handleCreateAndSave(tenant.id, key, floorNum);
                             }}
                             className="text-green-600 text-xs p-1"
                           >
@@ -248,8 +258,11 @@ export default function MeterOverview() {
                 );
               })}
             </div>
+              </div>
+            ))}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {activeTenants.length === 0 && (

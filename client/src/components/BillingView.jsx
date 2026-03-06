@@ -175,7 +175,7 @@ export default function BillingView() {
   const handleDownloadTemplate = async () => {
     const XLSX = (await import('xlsx')).default || (await import('xlsx'));
     const data = bills.map((b) => ({
-      '층': b.floor,
+      '층': (b.floors || []).join(','),
       '업체명': b.company_name,
       '임대료': b.rent_amount || 0,
       '관리비': b.maintenance_fee || 0,
@@ -213,7 +213,8 @@ export default function BillingView() {
     const rows = [];
     let matchCount = 0, diffCount = 0, newCount = 0, unmatchedFloors = [];
     for (const u of uploaded) {
-      const bill = bills.find((b) => b.floor === u.floor);
+      // floor → tenant의 bill 찾기 (다중층: floors 배열에 포함된 bill)
+      const bill = bills.find((b) => (b.floors || []).includes(u.floor));
       if (!bill) { unmatchedFloors.push(u.floor); continue; }
       for (const { key, label } of COMPARE_FIELDS) {
         const existing = bill[key] || 0;
@@ -372,7 +373,7 @@ export default function BillingView() {
                       r.status === 'new' ? 'bg-blue-50' : ''
                     }
                   >
-                    <td className="py-1.5 px-2 font-medium">{r.floor}F</td>
+                    <td className="py-1.5 px-2 font-medium">{r.floor || ''}F</td>
                     <td className="py-1.5 px-2">{r.label}</td>
                     <td className={`py-1.5 px-2 text-right ${r.status === 'match' ? 'text-gray-400' : ''}`}>{fmt(r.existing)}</td>
                     <td className={`py-1.5 px-2 text-right ${r.status === 'match' ? 'text-gray-400' : 'font-medium'}`}>{fmt(r.upload)}</td>
@@ -402,7 +403,7 @@ export default function BillingView() {
           {smsResult.targets?.length > 0 && (
             <ul className="mt-1 text-xs">
               {smsResult.targets.map((t, i) => (
-                <li key={i}>{t.floor}층 {t.company} — 미납: {t.unpaid.join(', ')}</li>
+                <li key={i}>{t.floors || t.floor}층 {t.company} — 미납: {t.unpaid.join(', ')}</li>
               ))}
             </ul>
           )}
@@ -446,7 +447,7 @@ export default function BillingView() {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
-                    {bill.floor}F
+                    {(bill.floors || []).join(',')}F
                   </span>
                   <span className="font-semibold text-gray-900 text-sm">{bill.company_name}</span>
                   {!isEditing && (

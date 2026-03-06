@@ -97,7 +97,7 @@ export default function TenantDashboard({ user, settings }) {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-lg font-bold text-gray-900">{user.name}</h2>
-          <p className="text-sm text-gray-500">{user.floor}층</p>
+          <p className="text-sm text-gray-500">{(user.floors || []).join(',')}층</p>
         </div>
         <div className="flex items-center gap-1">
           <button onClick={() => goMonth(-1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">

@@ -57,7 +57,7 @@ export default function TenantManage() {
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-700 text-sm font-bold">
-                    {t.floor}F
+                    {(t.floors || [t.floor]).join(',')}F
                   </span>
                   <div>
                     <p className="font-semibold text-gray-900">{t.company_name}</p>

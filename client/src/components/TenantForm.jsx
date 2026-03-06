@@ -8,7 +8,7 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
   const fileRef = useRef(null);
   const [showTax, setShowTax] = useState(false);
   const [form, setForm] = useState({
-    floor: tenant?.floor || '',
+    floors: tenant?.floors?.length ? tenant.floors.join(', ') : (tenant?.floor || ''),
     company_name: tenant?.company_name || '',
     business_number: tenant?.business_number || '',
     representative: tenant?.representative || '',
@@ -77,7 +77,9 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
     setError('');
     setSaving(true);
     try {
-      const body = { ...form, rent_amount: Number(form.rent_amount), maintenance_fee: Number(form.maintenance_fee), deposit_amount: Number(form.deposit_amount), floor: Number(form.floor) };
+      const floorsParsed = String(form.floors).split(/[,\s]+/).map(Number).filter(Boolean);
+      const body = { ...form, rent_amount: Number(form.rent_amount), maintenance_fee: Number(form.maintenance_fee), deposit_amount: Number(form.deposit_amount), floors: floorsParsed };
+      delete body.floor;
       if (bizDocBase64) {
         body.biz_doc_base64 = bizDocBase64;
         body.biz_doc_filename = bizDocFilename;
@@ -111,7 +113,8 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">층수 *</label>
-              <input type="number" min="1" max="99" value={form.floor} onChange={(e) => set('floor', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required />
+              <input type="text" value={form.floors} onChange={(e) => set('floors', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required placeholder="예: 2, 4" />
+              <p className="mt-0.5 text-xs text-gray-400">다중층은 쉼표로 구분 (예: 2, 4)</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">업체명 *</label>
@@ -159,7 +162,7 @@ export default function TenantForm({ tenant, onClose, onSaved }) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{isEdit ? '비밀번호 변경' : '비밀번호'}</label>
-            <input type="text" value={form.password} onChange={(e) => set('password', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder={isEdit ? '변경 시에만 입력' : '미입력 시 층수 4자리 (예: 0001)'} />
+            <input type="text" value={form.password} onChange={(e) => set('password', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder={isEdit ? '변경 시에만 입력' : '미입력 시 최소 층수 4자리 (예: 0002)'} />
             <p className="mt-1 text-xs text-gray-500">관리자가 비밀번호를 지정/변경하면 입주사는 다음 로그인 시 비밀번호를 다시 설정해야 합니다.</p>
           </div>
 

@@ -32,6 +32,10 @@ export default function MeterUpload({ user }) {
   const [message, setMessage] = useState('');
   const fileRefs = useRef({});
 
+  const userFloors = user.floors || [];
+  const isMultiFloor = userFloors.length > 1;
+  const [selectedFloor, setSelectedFloor] = useState(userFloors[0] || null);
+
   const kst = getKstNow();
   const kstDay = kst.getDate();
   const kstMonth = kst.getMonth() + 1;
@@ -47,7 +51,7 @@ export default function MeterUpload({ user }) {
 
   useEffect(() => { loadReadings(); }, [year, month]);
 
-  const getReading = (type) => readings.find((r) => r.utility_type === type);
+  const getReading = (type) => readings.find((r) => r.utility_type === type && (!isMultiFloor || r.floor === selectedFloor));
 
   const handleUpload = async (utilityType, file) => {
     if (!file) return;
@@ -63,6 +67,7 @@ export default function MeterUpload({ user }) {
           utility_type: utilityType,
           photo_base64: base64,
           photo_filename: file.name,
+          floor: selectedFloor,
         }),
       });
       if (res.ok) {
@@ -98,6 +103,25 @@ export default function MeterUpload({ user }) {
           ))}
         </select>
       </div>
+
+      {/* 다중층 탭 */}
+      {isMultiFloor && (
+        <div className="flex gap-2 mb-4">
+          {userFloors.map((f) => (
+            <button
+              key={f}
+              onClick={() => setSelectedFloor(f)}
+              className={`flex-1 py-2 text-sm rounded-lg border font-medium transition-colors ${
+                selectedFloor === f
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+              }`}
+            >
+              {f}층
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 검침 기간 배너 */}
       {isElecPeriod && (

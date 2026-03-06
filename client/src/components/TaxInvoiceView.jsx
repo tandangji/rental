@@ -201,8 +201,8 @@ export default function TaxInvoiceView() {
         {(() => {
           const grouped = {};
           filtered.forEach((inv) => {
-            const key = `${inv.floor}-${inv.company_name}`;
-            if (!grouped[key]) grouped[key] = { floor: inv.floor, company_name: inv.company_name, business_number: inv.business_number, items: [] };
+            const key = `${inv.tenant_id}`;
+            if (!grouped[key]) grouped[key] = { floors: inv.floors, company_name: inv.company_name, business_number: inv.business_number, items: [] };
             grouped[key].items.push(inv);
           });
           return Object.values(grouped).map((group) => {
@@ -211,11 +211,11 @@ export default function TaxInvoiceView() {
             const allIssued = issuedCount === group.items.length;
 
             return (
-              <div key={`${group.floor}-${group.company_name}`} className={`bg-white rounded-xl border-2 p-4 ${allIssued ? 'border-green-200' : 'border-gray-200'}`}>
+              <div key={`${(group.floors||[]).join(',')}-${group.company_name}`} className={`bg-white rounded-xl border-2 p-4 ${allIssued ? 'border-green-200' : 'border-gray-200'}`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
-                      {group.floor}F
+                      {(group.floors || []).join(',')}F
                     </span>
                     <div>
                       <span className="font-semibold text-gray-900 text-sm">{group.company_name}</span>

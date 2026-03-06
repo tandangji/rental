@@ -253,7 +253,7 @@ export default function AdminDashboard() {
             <div key={t.id} className="bg-white rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-blue-700 bg-blue-50 rounded-full w-6 h-6 flex items-center justify-center">
-                  {t.floor}
+                  {(t.floors || [t.floor]).join(',')}
                 </span>
                 <span className="text-sm text-gray-900">{t.company_name}</span>
               </div>

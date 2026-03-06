@@ -112,11 +112,11 @@ const pool = new Pool({
   await pool.query(`
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN
   `);
-  // 기존 데이터 보정: 기본 비밀번호(층수 4자리)면 변경 필요로 설정
+  // 기존 데이터 보정: 기본 비밀번호(최소 층수 4자리)면 변경 필요로 설정
   await pool.query(`
     UPDATE tenants
     SET must_change_password = CASE
-      WHEN password = LPAD(floor::text, 4, '0') THEN TRUE
+      WHEN password = LPAD(COALESCE((SELECT MIN(tf.floor) FROM tenant_floors tf WHERE tf.tenant_id = tenants.id), floor)::text, 4, '0') THEN TRUE
       ELSE FALSE
     END
     WHERE must_change_password IS NULL
@@ -251,7 +251,7 @@ const pool = new Pool({
   for (const d of taxBuyerSeed) {
     await pool.query(
       `UPDATE tenants SET tax_company_name=$1, tax_representative=$2, tax_address=$3, tax_business_type=$4, tax_business_item=$5, tax_email=$6, tax_email2=$7
-       WHERE floor=$8 AND tax_company_name=''`,
+       WHERE id IN (SELECT tenant_id FROM tenant_floors WHERE floor=$8) AND tax_company_name=''`,
       [d.tax_company_name, d.tax_representative, d.tax_address, d.tax_business_type, d.tax_business_item, d.tax_email, d.tax_email2, d.floor]
     );
   }
@@ -340,6 +340,96 @@ const pool = new Pool({
     )
   `);
 
+  // ─── tenant_floors (다중층 입주사 지원) ───────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_floors (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      floor INTEGER UNIQUE NOT NULL
+    )
+  `);
+  // 기존 tenants.floor → tenant_floors 이관
+  await pool.query(`
+    INSERT INTO tenant_floors (tenant_id, floor)
+    SELECT id, floor FROM tenants WHERE floor IS NOT NULL
+    ON CONFLICT DO NOTHING
+  `);
+  // meter_readings에 floor 컬럼 추가 + 백필
+  await pool.query(`ALTER TABLE meter_readings ADD COLUMN IF NOT EXISTS floor INTEGER`);
+  await pool.query(`
+    UPDATE meter_readings mr SET floor = t.floor
+    FROM tenants t WHERE mr.tenant_id = t.id AND mr.floor IS NULL
+  `);
+
+  // ─── 브이모먼트 다중층 머지 (2층+4층 → 1개 tenant) ───────
+  {
+    const { rows: vms } = await pool.query(
+      `SELECT id, floor FROM tenants WHERE company_name LIKE '%브이모먼트%' AND is_active = TRUE ORDER BY floor ASC`
+    );
+    if (vms.length === 2) {
+      const primary = vms[0]; // 2층 (MIN floor)
+      const secondary = vms[1]; // 4층
+
+      // tenant_floors: primary에 secondary floor 추가
+      await pool.query(
+        `INSERT INTO tenant_floors (tenant_id, floor) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [primary.id, secondary.floor]
+      );
+
+      // meter_readings: secondary → primary, floor 보존
+      await pool.query(
+        `UPDATE meter_readings SET tenant_id = $1, floor = $2 WHERE tenant_id = $3`,
+        [primary.id, secondary.floor, secondary.id]
+      );
+
+      // monthly_bills 머지: 양쪽 다 있는 월은 공과금 합산
+      const { rows: secBills } = await pool.query(
+        `SELECT * FROM monthly_bills WHERE tenant_id = $1`, [secondary.id]
+      );
+      for (const sb of secBills) {
+        const { rows: priB } = await pool.query(
+          `SELECT id FROM monthly_bills WHERE tenant_id = $1 AND year = $2 AND month = $3`,
+          [primary.id, sb.year, sb.month]
+        );
+        if (priB.length > 0) {
+          // 합산 (공과금만; 임대료/관리비는 primary 기준 유지)
+          await pool.query(
+            `UPDATE monthly_bills SET
+              electricity_amount = electricity_amount + $1,
+              water_amount = water_amount + $2
+            WHERE id = $3`,
+            [sb.electricity_amount || 0, sb.water_amount || 0, priB[0].id]
+          );
+          await pool.query(`DELETE FROM monthly_bills WHERE id = $1`, [sb.id]);
+        } else {
+          // secondary만 있는 월 → primary로 재할당
+          await pool.query(
+            `UPDATE monthly_bills SET tenant_id = $1 WHERE id = $2`,
+            [primary.id, sb.id]
+          );
+        }
+      }
+
+      // tax_invoices, inquiries → primary로 재할당
+      await pool.query(`UPDATE tax_invoices SET tenant_id = $1 WHERE tenant_id = $2`, [primary.id, secondary.id]);
+      await pool.query(`UPDATE inquiries SET tenant_id = $1 WHERE tenant_id = $2`, [primary.id, secondary.id]);
+
+      // secondary 비활성화 + tenant_floors에서 제거
+      await pool.query(`DELETE FROM tenant_floors WHERE tenant_id = $1`, [secondary.id]);
+      await pool.query(`UPDATE tenants SET is_active = FALSE, floor = NULL WHERE id = $1`, [secondary.id]);
+
+      console.log(`브이모먼트 다중층 머지 완료: tenant ${primary.id}(${primary.floor}F) ← tenant ${secondary.id}(${secondary.floor}F)`);
+    }
+  }
+
+  // ─── meter_readings UNIQUE 제약 변경 (floor 포함) ─────────
+  try { await pool.query(`ALTER TABLE meter_readings DROP CONSTRAINT IF EXISTS meter_readings_tenant_id_year_month_utility_type_key`); } catch {}
+  try { await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meter_readings_unique ON meter_readings (tenant_id, floor, year, month, utility_type)`); } catch {}
+
+  // tenants.floor UNIQUE/NOT NULL 제거 (기존 제약 해제)
+  try { await pool.query(`ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_floor_key`); } catch {}
+  try { await pool.query(`ALTER TABLE tenants ALTER COLUMN floor DROP NOT NULL`); } catch {}
+
   console.log("테이블 초기화 완료");
 
   // ─── One-time migration: 2026년 1월 공과금 데이터 ─────────
@@ -362,7 +452,9 @@ const pool = new Pool({
     );
     for (const d of jan2026Data) {
       const { rows } = await pool.query(
-        "SELECT id, rent_amount, maintenance_fee FROM tenants WHERE floor = $1 AND is_active = TRUE", [d.floor]
+        `SELECT t.id, t.rent_amount, t.maintenance_fee FROM tenants t
+         JOIN tenant_floors tf ON tf.tenant_id = t.id
+         WHERE tf.floor = $1 AND t.is_active = TRUE`, [d.floor]
       );
       if (rows.length === 0) continue;
       const t = rows[0];
@@ -431,11 +523,16 @@ const pool = new Pool({
         return res.status(401).json({ error: "로그인 실패: 업체명 또는 비밀번호를 확인하세요" });
       }
       const tenant = rows[0];
+      // 다중층 지원: tenant_floors에서 층 목록 조회
+      const { rows: floorRows } = await pool.query(
+        "SELECT floor FROM tenant_floors WHERE tenant_id = $1 ORDER BY floor", [tenant.id]
+      );
+      const floors = floorRows.map((f) => f.floor);
       const token = crypto.randomUUID();
       sessions.set(token, {
         id: tenant.id,
         name: tenant.company_name,
-        floor: tenant.floor,
+        floors,
         role: "tenant",
         mustChangePassword: !!tenant.must_change_password,
         createdAt: Date.now(),
@@ -443,7 +540,7 @@ const pool = new Pool({
       return res.json({
         id: tenant.id,
         name: tenant.company_name,
-        floor: tenant.floor,
+        floors,
         role: "tenant",
         mustChangePassword: !!tenant.must_change_password,
         token,
@@ -569,14 +666,29 @@ const pool = new Pool({
   // ─── Tenants API ──────────────────────────────────────────
   const TENANT_LIST_COLS = "id, floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, is_active, created_at, must_change_password, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc_filename";
 
+  // tenant 목록에 floors 배열 추가 헬퍼
+  async function attachFloors(tenantRows) {
+    if (tenantRows.length === 0) return tenantRows;
+    const ids = tenantRows.map((t) => t.id);
+    const { rows: allFloors } = await pool.query(
+      `SELECT tenant_id, floor FROM tenant_floors WHERE tenant_id = ANY($1) ORDER BY floor`, [ids]
+    );
+    const floorMap = {};
+    allFloors.forEach((f) => {
+      if (!floorMap[f.tenant_id]) floorMap[f.tenant_id] = [];
+      floorMap[f.tenant_id].push(f.floor);
+    });
+    return tenantRows.map((t) => ({ ...t, floors: floorMap[t.id] || (t.floor != null ? [t.floor] : []) }));
+  }
+
   app.get("/tenants", async (req, res) => {
     try {
       if (req.user.role === "tenant") {
       const { rows } = await pool.query(`SELECT ${TENANT_LIST_COLS} FROM tenants WHERE id = $1`, [req.user.id]);
-      return res.json(rows);
+      return res.json(await attachFloors(rows));
       }
-      const { rows } = await pool.query(`SELECT ${TENANT_LIST_COLS} FROM tenants ORDER BY floor ASC`);
-      res.json(rows);
+      const { rows } = await pool.query(`SELECT ${TENANT_LIST_COLS} FROM tenants ORDER BY (SELECT MIN(floor) FROM tenant_floors WHERE tenant_id = tenants.id) ASC NULLS LAST`);
+      res.json(await attachFloors(rows));
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });
@@ -584,14 +696,19 @@ const pool = new Pool({
   });
 
   app.post("/tenants", requireAdmin, async (req, res) => {
-    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc_base64, biz_doc_filename } = req.body;
-    if (!floor || !company_name) {
+    const { floors, floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc_base64, biz_doc_filename } = req.body;
+    // floors 배열 또는 단일 floor 지원
+    const floorList = Array.isArray(floors) ? floors.map(Number).filter(Boolean) : (floor ? [Number(floor)] : []);
+    if (floorList.length === 0 || !company_name) {
       return res.status(400).json({ error: "층수와 업체명은 필수입니다" });
     }
     try {
-      const { rows: dup } = await pool.query("SELECT id FROM tenants WHERE floor = $1", [floor]);
+      // tenant_floors에서 중복 체크
+      const { rows: dup } = await pool.query(
+        "SELECT floor FROM tenant_floors WHERE floor = ANY($1)", [floorList]
+      );
       if (dup.length > 0) {
-        return res.status(409).json({ error: "해당 층에 이미 입주사가 등록되어 있습니다" });
+        return res.status(409).json({ error: `${dup.map(d => d.floor + '층').join(', ')}에 이미 입주사가 등록되어 있습니다` });
       }
       let docBuf = null, docSafe = null;
       if (biz_doc_base64) {
@@ -603,13 +720,19 @@ const pool = new Pool({
         if (!isJpeg && !isPng) return res.status(400).json({ error: "JPEG 또는 PNG 이미지만 업로드 가능합니다" });
         docSafe = biz_doc_filename ? path.basename(biz_doc_filename).replace(/[^a-zA-Z0-9가-힣._-]/g, "_") : null;
       }
-      const pw = password || String(floor).padStart(4, "0");
+      const pw = password || String(Math.min(...floorList)).padStart(4, "0");
+      const primaryFloor = Math.min(...floorList);
       const { rows } = await pool.query(
         `INSERT INTO tenants (floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, billing_day, payment_type, must_change_password, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc, biz_doc_filename)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,TRUE,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING id`,
-        [floor, company_name, business_number || null, representative || null, business_type || null, business_item || null, address || null, contact_phone || null, email || null, pw, rent_amount || 0, maintenance_fee || 0, deposit_amount || 0, lease_start || null, lease_end || null, billing_day || 1, payment_type || 'prepaid', tax_company_name || '', tax_representative || '', tax_address || '', tax_business_type || '', tax_business_item || '', tax_email || '', tax_email2 || '', docBuf, docSafe]
+        [primaryFloor, company_name, business_number || null, representative || null, business_type || null, business_item || null, address || null, contact_phone || null, email || null, pw, rent_amount || 0, maintenance_fee || 0, deposit_amount || 0, lease_start || null, lease_end || null, billing_day || 1, payment_type || 'prepaid', tax_company_name || '', tax_representative || '', tax_address || '', tax_business_type || '', tax_business_item || '', tax_email || '', tax_email2 || '', docBuf, docSafe]
       );
-      res.json({ id: rows[0].id });
+      const tenantId = rows[0].id;
+      // tenant_floors 등록
+      for (const f of floorList) {
+        await pool.query("INSERT INTO tenant_floors (tenant_id, floor) VALUES ($1, $2) ON CONFLICT DO NOTHING", [tenantId, f]);
+      }
+      res.json({ id: tenantId });
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });
@@ -618,13 +741,17 @@ const pool = new Pool({
 
   app.put("/tenants/:id", requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, is_active, billing_day, payment_type, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc_base64, biz_doc_filename } = req.body;
+    const { floors, floor, company_name, business_number, representative, business_type, business_item, address, contact_phone, email, password, rent_amount, maintenance_fee, deposit_amount, lease_start, lease_end, is_active, billing_day, payment_type, tax_company_name, tax_representative, tax_address, tax_business_type, tax_business_item, tax_email, tax_email2, biz_doc_base64, biz_doc_filename } = req.body;
+    // floors 배열 또는 단일 floor 지원
+    const floorList = Array.isArray(floors) ? floors.map(Number).filter(Boolean) : (floor ? [Number(floor)] : null);
     try {
-      // Check floor conflict
-      if (floor) {
-        const { rows: dup } = await pool.query("SELECT id FROM tenants WHERE floor = $1 AND id != $2", [floor, id]);
+      // Check floor conflict in tenant_floors
+      if (floorList) {
+        const { rows: dup } = await pool.query(
+          "SELECT floor FROM tenant_floors WHERE floor = ANY($1) AND tenant_id != $2", [floorList, id]
+        );
         if (dup.length > 0) {
-          return res.status(409).json({ error: "해당 층에 이미 다른 입주사가 있습니다" });
+          return res.status(409).json({ error: `${dup.map(d => d.floor + '층').join(', ')}에 이미 다른 입주사가 있습니다` });
         }
       }
       let docBuf = undefined, docSafe = undefined;
@@ -638,6 +765,7 @@ const pool = new Pool({
         docSafe = biz_doc_filename ? path.basename(biz_doc_filename).replace(/[^a-zA-Z0-9가-힣._-]/g, "_") : null;
       }
 
+      const primaryFloor = floorList ? Math.min(...floorList) : null;
       let query = `UPDATE tenants SET
           floor = COALESCE($1, floor),
           company_name = COALESCE($2, company_name),
@@ -668,7 +796,7 @@ const pool = new Pool({
           tax_business_item = COALESCE($23, tax_business_item),
           tax_email = COALESCE($24, tax_email),
           tax_email2 = COALESCE($25, tax_email2)`;
-      const params = [floor, company_name, business_number ?? null, representative ?? null, business_type ?? null, business_item ?? null, address ?? null, contact_phone ?? null, email ?? null, password || "", rent_amount, maintenance_fee, deposit_amount, lease_start || null, lease_end || null, is_active, billing_day, payment_type, tax_company_name ?? '', tax_representative ?? '', tax_address ?? '', tax_business_type ?? '', tax_business_item ?? '', tax_email ?? '', tax_email2 ?? ''];
+      const params = [primaryFloor, company_name, business_number ?? null, representative ?? null, business_type ?? null, business_item ?? null, address ?? null, contact_phone ?? null, email ?? null, password || "", rent_amount, maintenance_fee, deposit_amount, lease_start || null, lease_end || null, is_active, billing_day, payment_type, tax_company_name ?? '', tax_representative ?? '', tax_address ?? '', tax_business_type ?? '', tax_business_item ?? '', tax_email ?? '', tax_email2 ?? ''];
       if (docBuf !== undefined) {
         query += `, biz_doc=$${params.length + 1}, biz_doc_filename=$${params.length + 2}`;
         params.push(docBuf, docSafe);
@@ -676,6 +804,14 @@ const pool = new Pool({
       query += ` WHERE id=$${params.length + 1}`;
       params.push(id);
       await pool.query(query, params);
+
+      // tenant_floors 업데이트
+      if (floorList) {
+        await pool.query("DELETE FROM tenant_floors WHERE tenant_id = $1", [id]);
+        for (const f of floorList) {
+          await pool.query("INSERT INTO tenant_floors (tenant_id, floor) VALUES ($1, $2)", [id, f]);
+        }
+      }
       res.json({ success: true });
     } catch (err) {
       console.error(err);
@@ -761,21 +897,21 @@ const pool = new Pool({
     try {
       let query, params;
       if (req.user.role === "tenant") {
-        query = "SELECT mr.*, t.floor, t.company_name FROM meter_readings mr JOIN tenants t ON mr.tenant_id = t.id WHERE mr.tenant_id = $1";
+        query = "SELECT mr.*, t.company_name FROM meter_readings mr JOIN tenants t ON mr.tenant_id = t.id WHERE mr.tenant_id = $1";
         params = [req.user.id];
         if (year && month) {
           query += " AND mr.year = $2 AND mr.month = $3";
           params.push(Number(year), Number(month));
         }
       } else {
-        query = "SELECT mr.*, t.floor, t.company_name FROM meter_readings mr JOIN tenants t ON mr.tenant_id = t.id WHERE 1=1";
+        query = "SELECT mr.*, t.company_name FROM meter_readings mr JOIN tenants t ON mr.tenant_id = t.id WHERE 1=1";
         params = [];
         if (year && month) {
           query += ` AND mr.year = $${params.length + 1} AND mr.month = $${params.length + 2}`;
           params.push(Number(year), Number(month));
         }
       }
-      query += " ORDER BY t.floor ASC, mr.utility_type ASC";
+      query += " ORDER BY mr.floor ASC, mr.utility_type ASC";
       const { rows } = await pool.query(query, params);
       // Strip photo BYTEA from list response
       const result = rows.map(({ photo, ...rest }) => rest);
@@ -787,12 +923,33 @@ const pool = new Pool({
   });
 
   app.post("/meter-readings", async (req, res) => {
-    const { tenant_id, year, month, utility_type, photo_base64, photo_filename, reading_value } = req.body;
+    const { tenant_id, year, month, utility_type, photo_base64, photo_filename, reading_value, floor: reqFloor } = req.body;
     try {
       // Tenant can only upload for themselves
       const targetTenantId = req.user.role === "tenant" ? req.user.id : tenant_id;
       if (!targetTenantId || !year || !month || !utility_type) {
         return res.status(400).json({ error: "필수 항목 누락" });
+      }
+
+      // floor 결정: 요청에서 받거나, 단일층 tenant는 자동 결정
+      let targetFloor = reqFloor ? Number(reqFloor) : null;
+      const { rows: tenantFloors } = await pool.query(
+        "SELECT floor FROM tenant_floors WHERE tenant_id = $1 ORDER BY floor", [targetTenantId]
+      );
+      if (!targetFloor) {
+        if (tenantFloors.length === 1) {
+          targetFloor = tenantFloors[0].floor;
+        } else if (tenantFloors.length > 1) {
+          return res.status(400).json({ error: "다중층 입주사는 층을 지정해야 합니다" });
+        } else {
+          // tenant_floors에 없으면 tenants.floor 사용 (fallback)
+          const { rows: tRows } = await pool.query("SELECT floor FROM tenants WHERE id = $1", [targetTenantId]);
+          targetFloor = tRows[0]?.floor;
+        }
+      }
+      // tenant가 해당 floor에 접근 권한이 있는지 검증
+      if (req.user.role === "tenant" && tenantFloors.length > 0 && !tenantFloors.some(f => f.floor === targetFloor)) {
+        return res.status(403).json({ error: "해당 층에 대한 권한이 없습니다" });
       }
 
       let photoBuf = null;
@@ -821,15 +978,15 @@ const pool = new Pool({
 
       const now = new Date().toISOString();
       const { rows } = await pool.query(
-        `INSERT INTO meter_readings (tenant_id, year, month, utility_type, reading_value, photo, photo_filename, uploaded_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         ON CONFLICT (tenant_id, year, month, utility_type)
-         DO UPDATE SET photo = COALESCE($6, meter_readings.photo),
-                       photo_filename = COALESCE($7, meter_readings.photo_filename),
-                       uploaded_at = CASE WHEN $6 IS NOT NULL THEN $8 ELSE meter_readings.uploaded_at END,
-                       reading_value = COALESCE($5, meter_readings.reading_value)
+        `INSERT INTO meter_readings (tenant_id, floor, year, month, utility_type, reading_value, photo, photo_filename, uploaded_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT (tenant_id, floor, year, month, utility_type)
+         DO UPDATE SET photo = COALESCE($7, meter_readings.photo),
+                       photo_filename = COALESCE($8, meter_readings.photo_filename),
+                       uploaded_at = CASE WHEN $7 IS NOT NULL THEN $9 ELSE meter_readings.uploaded_at END,
+                       reading_value = COALESCE($6, meter_readings.reading_value)
          RETURNING id`,
-        [targetTenantId, year, month, utility_type, reading_value ?? null, photoBuf, safeName, now]
+        [targetTenantId, targetFloor, year, month, utility_type, reading_value ?? null, photoBuf, safeName, now]
       );
       res.json({ id: rows[0].id });
 
@@ -837,13 +994,13 @@ const pool = new Pool({
       if (photoBuf) {
         const UTILITY_LABEL = { electricity: "⚡ 전기", water: "💧 수도" };
         const { rows: tenantRows } = await pool.query(
-          "SELECT floor, company_name FROM tenants WHERE id = $1", [targetTenantId]
+          "SELECT company_name FROM tenants WHERE id = $1", [targetTenantId]
         );
         if (tenantRows.length > 0) {
           const t = tenantRows[0];
           const kstNow = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
           await sendTelegramAlert(
-            `📷 <b>검침 사진 업로드</b>\n📍 ${t.floor}층 ${t.company_name}\n${UTILITY_LABEL[utility_type] || utility_type}\n📅 ${year}년 ${month}월\n🕐 ${kstNow}`
+            `📷 <b>검침 사진 업로드</b>\n📍 ${targetFloor}층 ${t.company_name}\n${UTILITY_LABEL[utility_type] || utility_type}\n📅 ${year}년 ${month}월\n🕐 ${kstNow}`
           );
         }
       }
@@ -923,7 +1080,9 @@ const pool = new Pool({
   app.get("/monthly-bills", async (req, res) => {
     const { year, month } = req.query;
     try {
-      let query = "SELECT mb.*, t.floor, t.company_name FROM monthly_bills mb JOIN tenants t ON mb.tenant_id = t.id WHERE 1=1";
+      let query = `SELECT mb.*, t.company_name,
+        (SELECT array_agg(tf.floor ORDER BY tf.floor) FROM tenant_floors tf WHERE tf.tenant_id = t.id) as floors
+        FROM monthly_bills mb JOIN tenants t ON mb.tenant_id = t.id WHERE 1=1`;
       const params = [];
       if (req.user.role === "tenant") {
         query += ` AND mb.tenant_id = $${params.length + 1}`;
@@ -933,7 +1092,7 @@ const pool = new Pool({
         query += ` AND mb.year = $${params.length + 1} AND mb.month = $${params.length + 2}`;
         params.push(Number(year), Number(month));
       }
-      query += " ORDER BY t.floor ASC";
+      query += " ORDER BY (SELECT MIN(tf.floor) FROM tenant_floors tf WHERE tf.tenant_id = t.id) ASC NULLS LAST";
       const { rows } = await pool.query(query, params);
       res.json(rows);
     } catch (err) {
@@ -965,30 +1124,36 @@ const pool = new Pool({
     }
   });
 
-  // Generate monthly bills (auto-distribute utility costs)
+  // Generate monthly bills (auto-distribute utility costs) — 층별 배분 → tenant별 합산
   app.post("/monthly-bills/generate", requireAdmin, async (req, res) => {
     const { year, month } = req.body;
     if (!year || !month) {
       return res.status(400).json({ error: "연도와 월은 필수입니다" });
     }
     try {
-      // Get active tenants
-      const { rows: tenants } = await pool.query("SELECT * FROM tenants WHERE is_active = TRUE ORDER BY floor ASC");
+      // Get active tenants with their floors
+      const { rows: tenants } = await pool.query("SELECT * FROM tenants WHERE is_active = TRUE");
       if (tenants.length === 0) {
         return res.status(400).json({ error: "활성 입주사가 없습니다" });
+      }
+      // tenant_floors → 층별 tenant 매핑
+      const { rows: allFloors } = await pool.query(
+        `SELECT tf.tenant_id, tf.floor FROM tenant_floors tf JOIN tenants t ON tf.tenant_id = t.id WHERE t.is_active = TRUE ORDER BY tf.floor ASC`
+      );
+      if (allFloors.length === 0) {
+        return res.status(400).json({ error: "활성 층이 없습니다" });
       }
 
       // Get building bills
       const { rows: bbRows } = await pool.query("SELECT * FROM building_bills WHERE year=$1 AND month=$2", [year, month]);
       const buildingBill = bbRows[0] || { electricity_total: 0, water_total: 0 };
 
-      // Distribute utility costs — reading_value를 해당 월 사용량으로 직접 사용
-      // 홀수달: 전기+수도, 짝수달: 전기만
       const isWaterMonth = month % 2 === 1;
       const utilityTypes = isWaterMonth ? ["electricity", "water"] : ["electricity"];
       const totalFields = { electricity: "electricity_total", water: "water_total" };
       const amountFields = { electricity: "electricity_amount", water: "water_amount" };
 
+      // tenant별 배분 결과
       const distribution = {};
       tenants.forEach((t) => {
         distribution[t.id] = { electricity_amount: 0, water_amount: isWaterMonth ? 0 : undefined };
@@ -998,51 +1163,47 @@ const pool = new Pool({
         const totalCost = buildingBill[totalFields[utype]] || 0;
         if (totalCost === 0) continue;
 
-        // 해당 월 사용량 조회
+        // 층별 사용량 조회
         const { rows: readings } = await pool.query(
-          "SELECT tenant_id, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
+          "SELECT tenant_id, floor, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
           [year, month, utype]
         );
 
-        const usages = [];
+        // 층별 사용량 결정
+        const floorUsages = [];
         let totalUsage = 0;
-        for (const t of tenants) {
-          const reading = readings.find((r) => r.tenant_id === t.id);
+        for (const tf of allFloors) {
+          const reading = readings.find((r) => r.tenant_id === tf.tenant_id && r.floor === tf.floor);
           const usage = reading?.reading_value != null ? parseFloat(reading.reading_value) : null;
-          usages.push({ tenantId: t.id, usage });
-          if (usage != null) totalUsage += usage;
+          floorUsages.push({ tenantId: tf.tenant_id, floor: tf.floor, usage });
+          if (usage != null && usage > 0) totalUsage += usage;
         }
 
-        // Distribute
-        const validUsages = usages.filter((u) => u.usage !== null && u.usage > 0);
+        // 층별 배분 → tenant별 합산
+        const validUsages = floorUsages.filter((u) => u.usage !== null && u.usage > 0);
         if (validUsages.length === 0) {
-          // 사용량 미입력: 균등 배분
-          const share = Math.round(totalCost / tenants.length);
+          // 균등 배분 (층 수 기준)
+          const share = Math.round(totalCost / allFloors.length);
           let allocated = 0;
-          tenants.forEach((t, idx) => {
-            if (idx === tenants.length - 1) {
-              distribution[t.id][amountFields[utype]] = totalCost - allocated;
-            } else {
-              distribution[t.id][amountFields[utype]] = share;
-              allocated += share;
-            }
+          allFloors.forEach((tf, idx) => {
+            const amt = idx === allFloors.length - 1 ? totalCost - allocated : share;
+            distribution[tf.tenant_id][amountFields[utype]] = (distribution[tf.tenant_id][amountFields[utype]] || 0) + amt;
+            allocated += amt;
           });
         } else {
-          // 사용량 비례 배분
+          // 사용량 비례 배분 (층별)
           let allocated = 0;
           validUsages.forEach((u, idx) => {
-            if (idx === validUsages.length - 1) {
-              distribution[u.tenantId][amountFields[utype]] = totalCost - allocated;
-            } else {
-              const amount = Math.round(totalCost * (u.usage / totalUsage));
-              distribution[u.tenantId][amountFields[utype]] = amount;
-              allocated += amount;
-            }
+            const amt = idx === validUsages.length - 1
+              ? totalCost - allocated
+              : Math.round(totalCost * (u.usage / totalUsage));
+            distribution[u.tenantId][amountFields[utype]] = (distribution[u.tenantId][amountFields[utype]] || 0) + amt;
+            allocated += amt;
           });
         }
       }
 
-      // Upsert: 기존 청구서가 있으면 공과금만 업데이트, 없으면 임대료/관리비 포함 생성
+      // Upsert: tenant 단위 1개 monthly_bill
       let updated = 0;
       for (const t of tenants) {
         const d = distribution[t.id];
@@ -1052,7 +1213,7 @@ const pool = new Pool({
              VALUES ($1,$2,$3,$4,$5,$6,$7)
              ON CONFLICT (tenant_id, year, month) DO UPDATE SET
                electricity_amount=$6, water_amount=$7`,
-            [t.id, year, month, t.rent_amount, t.maintenance_fee, d.electricity_amount, d.water_amount]
+            [t.id, year, month, t.rent_amount, t.maintenance_fee, d.electricity_amount || 0, d.water_amount || 0]
           );
         } else {
           await pool.query(
@@ -1060,7 +1221,7 @@ const pool = new Pool({
              VALUES ($1,$2,$3,$4,$5,$6,0)
              ON CONFLICT (tenant_id, year, month) DO UPDATE SET
                electricity_amount=$6, water_amount=0`,
-            [t.id, year, month, t.rent_amount, t.maintenance_fee, d.electricity_amount]
+            [t.id, year, month, t.rent_amount, t.maintenance_fee, d.electricity_amount || 0]
           );
         }
         updated++;
@@ -1164,7 +1325,7 @@ const pool = new Pool({
         const { floor, rent_amount, maintenance_fee, electricity_amount, water_amount, other_amount, other_label } = u;
         if (floor == null) { errors.push("floor 누락"); continue; }
         const { rows } = await pool.query(
-          "SELECT id FROM tenants WHERE floor = $1 AND is_active = true", [floor]
+          `SELECT tf.tenant_id as id FROM tenant_floors tf JOIN tenants t ON tf.tenant_id = t.id WHERE tf.floor = $1 AND t.is_active = true`, [floor]
         );
         if (rows.length === 0) { errors.push(`${floor}층: 입주사 없음`); continue; }
         const tenantId = rows[0].id;
@@ -1230,10 +1391,11 @@ const pool = new Pool({
     const { year, month } = req.query;
     try {
       let query = `
-        SELECT mb.*, t.floor, t.company_name, t.business_number, t.representative, t.address,
+        SELECT mb.*, t.company_name, t.business_number, t.representative, t.address,
                t.business_type, t.business_item, t.email,
                t.tax_company_name, t.tax_representative, t.tax_address,
-               t.tax_business_type, t.tax_business_item, t.tax_email, t.tax_email2
+               t.tax_business_type, t.tax_business_item, t.tax_email, t.tax_email2,
+               (SELECT array_agg(tf.floor ORDER BY tf.floor) FROM tenant_floors tf WHERE tf.tenant_id = t.id) as floors
         FROM monthly_bills mb
         JOIN tenants t ON mb.tenant_id = t.id
         WHERE 1=1`;
@@ -1246,7 +1408,7 @@ const pool = new Pool({
         query += ` AND mb.year = $${params.length + 1} AND mb.month = $${params.length + 2}`;
         params.push(Number(year), Number(month));
       }
-      query += " ORDER BY t.floor ASC";
+      query += " ORDER BY (SELECT MIN(tf.floor) FROM tenant_floors tf WHERE tf.tenant_id = t.id) ASC NULLS LAST";
       const { rows: bills } = await pool.query(query, params);
 
       // monthly_bills → 항목별 세금계산서 행으로 변환
@@ -1280,7 +1442,7 @@ const pool = new Pool({
             is_issued: ti?.is_issued || false,
             issued_date: ti?.issued_date || null,
             memo: ti?.memo || null,
-            floor: bill.floor,
+            floors: bill.floors,
             company_name: bill.company_name,
             business_number: bill.business_number,
             representative: bill.representative,
@@ -1366,7 +1528,7 @@ const pool = new Pool({
     const { year, month } = req.body;
     try {
       // Find tenants who haven't uploaded all 3 meter photos
-      const { rows: tenants } = await pool.query("SELECT * FROM tenants WHERE is_active = TRUE ORDER BY floor");
+      const { rows: tenants } = await pool.query("SELECT * FROM tenants WHERE is_active = TRUE ORDER BY (SELECT MIN(floor) FROM tenant_floors WHERE tenant_id = tenants.id)");
       const { rows: readings } = await pool.query(
         "SELECT tenant_id, utility_type FROM meter_readings WHERE year=$1 AND month=$2 AND photo IS NOT NULL",
         [year, month]
@@ -1389,8 +1551,12 @@ const pool = new Pool({
       }
 
       // TODO: Integrate with actual SMS API (coolsms/aligo)
+      // 각 tenant의 floors 조회
+      const { rows: tfRows } = await pool.query("SELECT tenant_id, floor FROM tenant_floors ORDER BY floor");
+      const tfMap = {};
+      tfRows.forEach((r) => { if (!tfMap[r.tenant_id]) tfMap[r.tenant_id] = []; tfMap[r.tenant_id].push(r.floor); });
       const targetInfo = targets.map((t) => ({
-        floor: t.floor,
+        floors: (tfMap[t.id] || [t.floor]).join(','),
         company: t.company_name,
         phone: t.contact_phone,
         missing: requiredCount - (uploadedMap[t.id]?.size || 0),
@@ -1411,7 +1577,9 @@ const pool = new Pool({
     const { year, month } = req.body;
     try {
       const { rows: bills } = await pool.query(
-        `SELECT mb.*, t.floor, t.company_name, t.contact_phone FROM monthly_bills mb
+        `SELECT mb.*, t.company_name, t.contact_phone,
+          (SELECT array_agg(tf.floor ORDER BY tf.floor) FROM tenant_floors tf WHERE tf.tenant_id = t.id) as floors
+         FROM monthly_bills mb
          JOIN tenants t ON mb.tenant_id = t.id
          WHERE mb.year=$1 AND mb.month=$2
          AND (mb.rent_paid = FALSE OR mb.maintenance_paid = FALSE OR mb.electricity_paid = FALSE OR mb.water_paid = FALSE)`,
@@ -1428,7 +1596,7 @@ const pool = new Pool({
         if (!b.maintenance_paid && b.maintenance_fee > 0) unpaid.push("관리비");
         if (!b.electricity_paid && b.electricity_amount > 0) unpaid.push("전기");
         if (!b.water_paid && b.water_amount > 0) unpaid.push("수도");
-        return { floor: b.floor, company: b.company_name, phone: b.contact_phone, unpaid };
+        return { floors: (b.floors || []).join(','), company: b.company_name, phone: b.contact_phone, unpaid };
       });
 
       res.json({
@@ -1462,98 +1630,100 @@ const pool = new Pool({
         return;
       }
 
-      // 2. 활성 입주사 목록
+      // 2. 활성 입주사 목록 + 층별 매핑
       const { rows: tenants } = await pool.query(
-        "SELECT * FROM tenants WHERE is_active = TRUE ORDER BY floor ASC"
+        "SELECT * FROM tenants WHERE is_active = TRUE"
       );
       if (tenants.length === 0) return;
 
-      // 3. 해당 월 사용량 조회
+      const { rows: allFloors } = await pool.query(
+        `SELECT tf.tenant_id, tf.floor FROM tenant_floors tf JOIN tenants t ON tf.tenant_id = t.id WHERE t.is_active = TRUE ORDER BY tf.floor ASC`
+      );
+      if (allFloors.length === 0) return;
+
+      // 3. 해당 월 층별 사용량 조회
       const { rows: currentReadings } = await pool.query(
-        "SELECT tenant_id, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
+        "SELECT tenant_id, floor, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
         [year, month, utilityType]
       );
 
       // 4. 전월 사용량 조회 (수도: 2달 전 홀수달, 전기: 직전 달)
       let prevYear = year, prevMonth;
       if (utilityType === "water") {
-        prevMonth = month - 2; // 직전 홀수달
+        prevMonth = month - 2;
       } else {
         prevMonth = month - 1;
       }
       if (prevMonth <= 0) { prevMonth += 12; prevYear--; }
 
       const { rows: prevReadings } = await pool.query(
-        "SELECT tenant_id, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
+        "SELECT tenant_id, floor, reading_value FROM meter_readings WHERE year=$1 AND month=$2 AND utility_type=$3",
         [prevYear, prevMonth, utilityType]
       );
 
-      // 5. 사용량 결정: 미입력 → 전월 1.5배, 전월도 없으면 null(균등 배분)
-      const usages = [];
+      // 5. 층별 사용량 결정: 미입력 → 전월 1.5배
+      const floorUsages = [];
       let totalUsage = 0;
       const autoFilledTenants = [];
 
-      for (const t of tenants) {
-        const current = currentReadings.find((r) => r.tenant_id === t.id);
+      for (const tf of allFloors) {
+        const current = currentReadings.find((r) => r.tenant_id === tf.tenant_id && r.floor === tf.floor);
         let usage = current?.reading_value != null ? parseFloat(current.reading_value) : null;
 
         if (usage === null) {
-          const prev = prevReadings.find((r) => r.tenant_id === t.id);
+          const prev = prevReadings.find((r) => r.tenant_id === tf.tenant_id && r.floor === tf.floor);
           if (prev?.reading_value != null) {
             usage = Math.round(parseFloat(prev.reading_value) * 1.5 * 100) / 100;
-            autoFilledTenants.push(`${t.floor}층 ${t.company_name} (${usage})`);
+            const tName = tenants.find((t) => t.id === tf.tenant_id)?.company_name || '';
+            autoFilledTenants.push(`${tf.floor}층 ${tName} (${usage})`);
             // meter_readings에 자동값 기록
             await pool.query(
-              `INSERT INTO meter_readings (tenant_id, year, month, utility_type, reading_value)
-               VALUES ($1,$2,$3,$4,$5)
-               ON CONFLICT (tenant_id, year, month, utility_type)
-               DO UPDATE SET reading_value = $5`,
-              [t.id, year, month, utilityType, usage]
+              `INSERT INTO meter_readings (tenant_id, floor, year, month, utility_type, reading_value)
+               VALUES ($1,$2,$3,$4,$5,$6)
+               ON CONFLICT (tenant_id, floor, year, month, utility_type)
+               DO UPDATE SET reading_value = $6`,
+              [tf.tenant_id, tf.floor, year, month, utilityType, usage]
             );
           }
         }
 
-        usages.push({ tenantId: t.id, usage });
+        floorUsages.push({ tenantId: tf.tenant_id, floor: tf.floor, usage });
         if (usage != null && usage > 0) totalUsage += usage;
       }
 
-      // 6. 배분 계산
+      // 6. 층별 배분 → tenant별 합산
       const distribution = {};
-      const validUsages = usages.filter((u) => u.usage !== null && u.usage > 0);
+      for (const t of tenants) distribution[t.id] = 0;
+
+      const validUsages = floorUsages.filter((u) => u.usage !== null && u.usage > 0);
 
       if (validUsages.length === 0) {
-        const share = Math.round(totalCost / tenants.length);
+        const share = Math.round(totalCost / allFloors.length);
         let allocated = 0;
-        tenants.forEach((t, idx) => {
-          if (idx === tenants.length - 1) {
-            distribution[t.id] = totalCost - allocated;
-          } else {
-            distribution[t.id] = share;
-            allocated += share;
-          }
+        allFloors.forEach((tf, idx) => {
+          const amt = idx === allFloors.length - 1 ? totalCost - allocated : share;
+          distribution[tf.tenant_id] = (distribution[tf.tenant_id] || 0) + amt;
+          allocated += amt;
         });
       } else {
         let allocated = 0;
-        for (const t of tenants) distribution[t.id] = 0;
         validUsages.forEach((u, idx) => {
-          if (idx === validUsages.length - 1) {
-            distribution[u.tenantId] = totalCost - allocated;
-          } else {
-            const amount = Math.round(totalCost * (u.usage / totalUsage));
-            distribution[u.tenantId] = amount;
-            allocated += amount;
-          }
+          const amt = idx === validUsages.length - 1
+            ? totalCost - allocated
+            : Math.round(totalCost * (u.usage / totalUsage));
+          distribution[u.tenantId] = (distribution[u.tenantId] || 0) + amt;
+          allocated += amt;
         });
       }
 
-      // 7. monthly_bills UPSERT
+      // 7. monthly_bills UPSERT (tenant 단위)
       let updated = 0;
       for (const t of tenants) {
         await pool.query(
           `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee, ${amountField})
            VALUES ($1,$2,$3,$4,$5,$6)
            ON CONFLICT (tenant_id, year, month) DO UPDATE SET ${amountField}=$6`,
-          [t.id, year, month, t.rent_amount, t.maintenance_fee, distribution[t.id]]
+          [t.id, year, month, t.rent_amount, t.maintenance_fee, distribution[t.id] || 0]
         );
         updated++;
       }
@@ -1641,14 +1811,15 @@ const pool = new Pool({
   async function checkUnpaidAlert() {
     try {
       const { rows } = await pool.query(
-        `SELECT mb.year, mb.month, t.floor, t.company_name,
+        `SELECT mb.year, mb.month, t.company_name,
+                (SELECT array_agg(tf.floor ORDER BY tf.floor) FROM tenant_floors tf WHERE tf.tenant_id = t.id) as floors,
                 mb.rent_paid, mb.maintenance_paid, mb.electricity_paid, mb.water_paid,
                 mb.rent_amount, mb.maintenance_fee, mb.electricity_amount, mb.water_amount
          FROM monthly_bills mb JOIN tenants t ON t.id = mb.tenant_id
          WHERE (mb.rent_paid = FALSE OR mb.maintenance_paid = FALSE
                 OR mb.electricity_paid = FALSE OR mb.water_paid = FALSE)
            AND (mb.rent_amount > 0 OR mb.maintenance_fee > 0 OR mb.electricity_amount > 0 OR mb.water_amount > 0)
-         ORDER BY mb.year DESC, mb.month DESC, t.floor ASC`
+         ORDER BY mb.year DESC, mb.month DESC, (SELECT MIN(tf.floor) FROM tenant_floors tf WHERE tf.tenant_id = t.id) ASC`
       );
       if (rows.length === 0) return;
 
@@ -1660,7 +1831,8 @@ const pool = new Pool({
         if (!b.electricity_paid && b.electricity_amount > 0) unpaid.push("전기");
         if (!b.water_paid && b.water_amount > 0) unpaid.push("수도");
         if (unpaid.length > 0) {
-          lines.push(`📍 ${b.floor}층 ${b.company_name} (${b.year}/${String(b.month).padStart(2,"0")}) — ${unpaid.join(", ")}`);
+          const floorStr = (b.floors || []).join(',');
+          lines.push(`📍 ${floorStr}층 ${b.company_name} (${b.year}/${String(b.month).padStart(2,"0")}) — ${unpaid.join(", ")}`);
         }
       }
       await sendTelegramAlert(lines.join("\n"));
@@ -1977,15 +2149,20 @@ const pool = new Pool({
       return res.status(400).json({ error: "올바른 카테고리를 선택하세요" });
     }
     try {
-      const { rows: tenantRows } = await pool.query("SELECT floor, company_name FROM tenants WHERE id = $1", [req.user.id]);
+      const { rows: tenantRows } = await pool.query("SELECT company_name FROM tenants WHERE id = $1", [req.user.id]);
       if (tenantRows.length === 0) return res.status(404).json({ error: "입주사 정보를 찾을 수 없습니다" });
-      const { floor, company_name } = tenantRows[0];
+      const { company_name } = tenantRows[0];
+      // 다중층 tenant: body에서 floor를 받거나, 단일층이면 자동
+      const { rows: tfRows } = await pool.query("SELECT floor FROM tenant_floors WHERE tenant_id = $1 ORDER BY floor", [req.user.id]);
+      const reqFloor = req.body.floor ? Number(req.body.floor) : null;
+      const inquiryFloor = reqFloor || (tfRows.length === 1 ? tfRows[0].floor : tfRows[0]?.floor || 0);
+      const floorsStr = tfRows.map(f => f.floor).join(',');
       const { rows } = await pool.query(
         "INSERT INTO inquiries (tenant_id, floor, company_name, category, content) VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at",
-        [req.user.id, floor, company_name, category, String(content).trim()]
+        [req.user.id, inquiryFloor, company_name, category, String(content).trim()]
       );
       const now = new Date(rows[0].created_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-      await sendTelegramAlert(`🔔 <b>새 문의 접수</b>\n📍 ${floor}층 ${company_name}\n📋 ${category}\n💬 ${String(content).trim()}\n🕐 ${now}`);
+      await sendTelegramAlert(`🔔 <b>새 문의 접수</b>\n📍 ${floorsStr}층 ${company_name}\n📋 ${category}\n💬 ${String(content).trim()}\n🕐 ${now}`);
       res.json({ id: rows[0].id });
     } catch (err) {
       console.error(err);

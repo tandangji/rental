@@ -10,6 +10,9 @@ export default function InquiryForm({ user }) {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
+  const userFloors = user.floors || [];
+  const isMultiFloor = userFloors.length > 1;
+  const [selectedFloor, setSelectedFloor] = useState(userFloors[0] || null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,7 +23,7 @@ export default function InquiryForm({ user }) {
       const res = await authFetch(`${API_BASE}/inquiries`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category, content: content.trim() }),
+        body: JSON.stringify({ category, content: content.trim(), floor: selectedFloor }),
       });
       if (res.ok) {
         setDone(true);
@@ -54,7 +57,7 @@ export default function InquiryForm({ user }) {
   return (
     <div>
       <h2 className="text-lg font-bold text-gray-900 mb-1">문의하기</h2>
-      <p className="text-sm text-gray-500 mb-4">{user.floor}층 · 고장신고 및 건의사항</p>
+      <p className="text-sm text-gray-500 mb-4">{userFloors.join(',')}층 · 고장신고 및 건의사항</p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -76,6 +79,28 @@ export default function InquiryForm({ user }) {
             ))}
           </div>
         </div>
+
+        {isMultiFloor && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">해당 층</label>
+            <div className="flex gap-2">
+              {userFloors.map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setSelectedFloor(f)}
+                  className={`flex-1 py-2 text-sm rounded-lg border transition-colors ${
+                    selectedFloor === f
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                  }`}
+                >
+                  {f}층
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">내용</label>

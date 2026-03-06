@@ -125,7 +125,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-500">
-              {currentUser.name}{currentUser.floor ? ` (${currentUser.floor}층)` : ''}
+              {currentUser.name}{currentUser.floors?.length ? ` (${currentUser.floors.join(',')}층)` : ''}
             </span>
             {needsPasswordSetup && !showPasswordSetup && (
               <button
