@@ -160,7 +160,7 @@ export default function TenantDashboard({ user, settings }) {
                     <div className="flex items-center gap-1.5">
                       {isIssued && (
                         <span className="flex items-center gap-0.5 px-2 py-0.5 text-[11px] font-medium rounded-full bg-blue-100 text-blue-700">
-                          <FileText className="w-3 h-3" />발행
+                          <FileText className="w-3 h-3" />계산서 발행완료
                         </span>
                       )}
                       <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
