@@ -15,6 +15,7 @@ export default function AdminDashboard() {
   const [readings, setReadings] = useState([]);
   const [partnerSummary, setPartnerSummary] = useState(null);
   const [paymentSchedule, setPaymentSchedule] = useState([]);
+  const [autoAdvanced, setAutoAdvanced] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -23,11 +24,27 @@ export default function AdminDashboard() {
         authFetch(`${API_BASE}/monthly-bills?year=${year}&month=${month}`),
         authFetch(`${API_BASE}/meter-readings?year=${year}&month=${month}`),
       ]);
-      if (tRes.ok) setTenants(await tRes.json());
-      if (bRes.ok) setBills(await bRes.json());
-      if (rRes.ok) setReadings(await rRes.json());
+      const tData = tRes.ok ? await tRes.json() : [];
+      const bData = bRes.ok ? await bRes.json() : [];
+      const rData = rRes.ok ? await rRes.json() : [];
+      setTenants(tData);
+      setBills(bData);
+      setReadings(rData);
+
+      // 전월 모두 완납 시 현재 월로 자동 이동 (최초 1회)
+      if (!autoAdvanced && year === prevY && month === prevM && bData.length > 0) {
+        const pf = ['rent_paid', 'maintenance_paid', 'electricity_paid', 'water_paid'];
+        const af = ['rent_amount', 'maintenance_fee', 'electricity_amount', 'water_amount'];
+        const allPaid = bData.every((b) => pf.every((f, i) => b[af[i]] === 0 || b[f]));
+        if (allPaid) {
+          setAutoAdvanced(true);
+          setYear(kst.getFullYear());
+          setMonth(kstMonth);
+          return;
+        }
+      }
     } catch {}
-  }, [year, month]);
+  }, [year, month, autoAdvanced]);
 
   const loadPartnerSummary = useCallback(async () => {
     try {
