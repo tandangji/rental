@@ -400,3 +400,4 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v2.6 | 2026-03-06 | 청구 중심 관리 — v2.5 세금계산서 독립 CRUD 롤백, monthly_bills를 유일한 원본(single source of truth)으로 복원. PUT/DELETE /monthly-bills/:id 추가(금액 수정/삭제), BillingView 인라인 편집+삭제 UI, 납부 버튼 '완료'→'입금완료', TaxInvoiceForm 삭제, 세금계산서 발행 토글 billId+item_type 방식 복원 |
 | v2.7 | 2026-03-06 | 협력사 납기일 + 지급 관리 — partners에 payment_day 컬럼 추가, GET /partner-payments/schedule API, 설정 서브탭 4번째(지급 관리) 추가, PaymentManage 컴포넌트(월별 지급 현황+요약+토글+추가/삭제), 대시보드 지급 일정 카드(D-day 컬러) |
 | v3.0 | 2026-03-06 | 다중층 입주사 지원 — tenant_floors 테이블 신규, meter_readings.floor 컬럼 추가, 브이모먼트 2+4F 데이터 머지, 층별 공과금 배분→tenant별 합산, 검침 층 탭 UI, 로그인 session.floors 배열, 세금계산서/청구서/Excel 대조 floors 대응 |
+| v3.1 | 2026-03-06 | v3.0 핫픽스 + UX 개선 — 검침 면제(meter_exempt) 플래그, 비밀번호 미변경 시 API 차단 제거, 청구 납부 뱃지+버튼 분리 UI, 입주사 청구서/대시보드 세금계산서 발행 태그, 세금계산서 매월 20일 발행 안내, 검침 업로드 iOS 호환성 개선, 납부일 날짜 포맷팅 |
