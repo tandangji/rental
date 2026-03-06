@@ -58,9 +58,8 @@ rental/
             ├── MeterOverview.jsx      # 건물주 검침 현황 (3열 그리드)
             ├── MeterUpload.jsx        # 입주사 계량기 사진 업로드
             ├── BuildingBillForm.jsx   # 건물 전체 공과금 입력 (아코디언)
-            ├── BillingView.jsx        # 건물주 청구서 관리
-            ├── TaxInvoiceView.jsx     # 세금계산서 관리 (CRUD + 초안 생성)
-            ├── TaxInvoiceForm.jsx    # 세금계산서 등록/수정 모달
+            ├── BillingView.jsx        # 건물주 청구서 관리 (인라인 금액 편집 + 삭제)
+            ├── TaxInvoiceView.jsx     # 세금계산서 (monthly_bills 파생, 발행 토글만)
             ├── SettingsView.jsx       # 설정 (서브탭: 기본 설정/입주사/협력사)
             ├── PartnerManage.jsx      # 협력사 CRUD 목록 + 지급내역
             ├── PartnerForm.jsx        # 협력사 등록/수정 모달
@@ -236,19 +235,17 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | GET | /monthly-bills | 인증 | 목록 |
 | POST | /monthly-bills/generate | admin | 공과금 배분 + 청구서 생성 |
 | POST | /monthly-bills/generate-rent | admin | 임대료/관리비 수동 발행 (cron 누락 시 fallback) |
+| PUT | /monthly-bills/:id | admin | 금액 수정 (rent_amount, maintenance_fee, electricity/water/other_amount, other_label) |
+| DELETE | /monthly-bills/:id | admin | 단건 삭제 |
 | PATCH | /monthly-bills/:id/pay | admin | 납부 확인 토글 |
 | PATCH | /monthly-bills/:id/other | admin | 기타 항목 수정 (other_amount, other_label) |
 | PATCH | /monthly-bills/bulk-update | admin | Excel 대조 일괄 반영 (floor 기준 매칭, UPSERT) |
 
-### 세금계산서 (독립 CRUD)
+### 세금계산서 (monthly_bills 파생)
 | Method | Path | 권한 | 설명 |
 |--------|------|------|------|
-| GET | /tax-invoices | 인증 | 항목별 목록 (tax_invoices 직접 조회) |
-| POST | /tax-invoices/generate | admin | 초안 생성 (monthly_bills → tax_invoices 복사, 기존 스킵) |
-| POST | /tax-invoices | admin | 단건 수동 추가 |
-| PUT | /tax-invoices/:id | admin | 수정 (supply_amount, item_name, memo) |
-| DELETE | /tax-invoices/:id | admin | 삭제 (발행대기만) |
-| PATCH | /tax-invoices/:id/issue | admin | 발행 토글 |
+| GET | /tax-invoices | 인증 | 항목별 목록 (monthly_bills 기반 파생, tax_invoices에서 발행 상태 조회) |
+| PATCH | /tax-invoices/:billId/issue | admin | 발행 토글 (body: { item_type }) |
 
 ### 협력사 (requireAdmin)
 | Method | Path | 설명 |
@@ -387,3 +384,4 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v2.3 | 2026-03-06 | Excel 대조 기능 — 양식 다운로드(XLSX), 업로드→파싱→대조 테이블(일치/차이/신규 하이라이트), 전체 반영(bulk-update API) |
 | v2.4 | 2026-03-06 | 협력사 관리 + 설정 서브탭 — partners/partner_payments 테이블, CRUD+지급내역 API 9개, 설정 서브탭(기본 설정/입주사/협력사), 하단 네비 7→6탭, 대시보드 지급 현황 카드 |
 | v2.5 | 2026-03-06 | 세금계산서 수동 관리 — tax_invoices 독립 CRUD(초안 생성/추가/수정/삭제/발행 토글), item_name 컬럼 추가, monthly_bills 파생 제거, TaxInvoiceForm 모달 신규 |
+| v2.6 | 2026-03-06 | 청구 중심 관리 — v2.5 세금계산서 독립 CRUD 롤백, monthly_bills를 유일한 원본(single source of truth)으로 복원. PUT/DELETE /monthly-bills/:id 추가(금액 수정/삭제), BillingView 인라인 편집+삭제 UI, 납부 버튼 '완료'→'입금완료', TaxInvoiceForm 삭제, 세금계산서 발행 토글 billId+item_type 방식 복원 |

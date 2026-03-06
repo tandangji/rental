@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Download, Clock, CheckCircle, Plus, Pencil, Trash2, Zap } from 'lucide-react';
-import TaxInvoiceForm from './TaxInvoiceForm';
+import { Download, Clock, CheckCircle } from 'lucide-react';
 
 export default function TaxInvoiceView() {
   const now = new Date();
@@ -10,9 +9,6 @@ export default function TaxInvoiceView() {
   const [invoices, setInvoices] = useState([]);
   const [tab, setTab] = useState('pending');
   const [settings, setSettings] = useState({});
-  const [showForm, setShowForm] = useState(false);
-  const [editTarget, setEditTarget] = useState(null);
-  const [generating, setGenerating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -27,44 +23,15 @@ export default function TaxInvoiceView() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleToggleIssue = async (id) => {
+  const handleToggleIssue = async (billId, itemType) => {
     try {
-      const res = await authFetch(`${API_BASE}/tax-invoices/${id}/issue`, {
+      const res = await authFetch(`${API_BASE}/tax-invoices/${billId}/issue`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_type: itemType }),
       });
       if (res.ok) load();
     } catch {}
-  };
-
-  const handleDelete = async (id) => {
-    if (!confirm('이 세금계산서 항목을 삭제하시겠습니까?')) return;
-    try {
-      const res = await authFetch(`${API_BASE}/tax-invoices/${id}`, { method: 'DELETE' });
-      if (res.ok) load();
-      else {
-        const data = await res.json();
-        alert(data.error || '삭제 실패');
-      }
-    } catch {}
-  };
-
-  const handleGenerate = async () => {
-    setGenerating(true);
-    try {
-      const res = await authFetch(`${API_BASE}/tax-invoices/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ year, month }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        alert(`초안 생성 완료: ${data.created}건 생성, ${data.skipped}건 스킵`);
-        load();
-      }
-    } catch {} finally {
-      setGenerating(false);
-    }
   };
 
   const fmt = (n) => (n || 0).toLocaleString();
@@ -177,17 +144,6 @@ export default function TaxInvoiceView() {
         </div>
       </div>
 
-      {/* 초안 생성 버튼 */}
-      {invoices.length === 0 && (
-        <button
-          onClick={handleGenerate}
-          disabled={generating}
-          className="w-full flex items-center justify-center gap-2 py-2.5 mb-4 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
-        >
-          <Zap className="w-4 h-4" /> {generating ? '생성 중...' : '초안 생성 (청구서 기반)'}
-        </button>
-      )}
-
       {/* Tabs */}
       <div className="flex rounded-lg bg-gray-100 p-1 mb-4">
         <button
@@ -209,21 +165,13 @@ export default function TaxInvoiceView() {
       </div>
 
       {/* Action buttons */}
-      {tab === 'pending' && (
-        <div className="flex gap-2 mb-4">
-          {pending.length > 0 && (
-            <button
-              onClick={downloadXLSX}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 min-h-[44px]"
-            >
-              <Download className="w-4 h-4" /> 홈택스 양식 다운로드
-            </button>
-          )}
+      {tab === 'pending' && pending.length > 0 && (
+        <div className="mb-4">
           <button
-            onClick={() => { setEditTarget(null); setShowForm(true); }}
-            className="flex items-center justify-center gap-1 px-4 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 min-h-[44px]"
+            onClick={downloadXLSX}
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 min-h-[44px]"
           >
-            <Plus className="w-4 h-4" /> 추가
+            <Download className="w-4 h-4" /> 홈택스 양식 다운로드
           </button>
         </div>
       )}
@@ -288,40 +236,22 @@ export default function TaxInvoiceView() {
 
                 <div className="border border-gray-100 rounded-lg overflow-hidden">
                   {group.items.map((inv) => (
-                    <div key={`${inv.id}-${inv.item_type}`} className="flex items-center justify-between px-3 py-2.5 border-t border-gray-50 first:border-t-0">
+                    <div key={`${inv.bill_id}-${inv.item_type}`} className="flex items-center justify-between px-3 py-2.5 border-t border-gray-50 first:border-t-0">
                       <span className="text-sm text-gray-900 min-w-[40px]">{inv.item_name}</span>
                       <div className="flex-1 text-right mr-2">
                         <span className={`text-sm font-medium ${inv.is_issued ? 'text-green-600' : 'text-gray-900'}`}>{fmt(inv.total_amount)}원</span>
                         <p className="text-[11px] text-gray-400">공급 {fmt(inv.supply_amount)} / 세액 {fmt(inv.tax_amount)}</p>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => { setEditTarget(inv); setShowForm(true); }}
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                          title="수정"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleToggleIssue(inv.id)}
-                          className={`px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
-                            inv.is_issued
-                              ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                              : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                          }`}
-                        >
-                          {inv.is_issued ? '발행' : '대기'}
-                        </button>
-                        {!inv.is_issued && (
-                          <button
-                            onClick={() => handleDelete(inv.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                            title="삭제"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
+                      <button
+                        onClick={() => handleToggleIssue(inv.bill_id, inv.item_type)}
+                        className={`px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
+                          inv.is_issued
+                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                            : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                        }`}
+                      >
+                        {inv.is_issued ? '발행' : '대기'}
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -334,19 +264,9 @@ export default function TaxInvoiceView() {
       {filtered.length === 0 && (
         <p className="text-center py-8 text-gray-400">
           {invoices.length === 0
-            ? '세금계산서가 없습니다. 초안 생성 버튼을 눌러주세요.'
+            ? '청구서 데이터가 없습니다. 청구서 탭에서 먼저 청구서를 생성해주세요.'
             : tab === 'pending' ? '발행대기 건이 없습니다.' : '발행완료 건이 없습니다.'}
         </p>
-      )}
-
-      {showForm && (
-        <TaxInvoiceForm
-          invoice={editTarget}
-          year={year}
-          month={month}
-          onClose={() => { setShowForm(false); setEditTarget(null); }}
-          onSaved={load}
-        />
       )}
     </div>
   );

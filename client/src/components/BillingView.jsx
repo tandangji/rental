@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BuildingBillForm from './BuildingBillForm';
-import { MessageSquare, Plus, Pencil, Upload, Download } from 'lucide-react';
+import { MessageSquare, Plus, Pencil, Upload, Download, Trash2, Check, X } from 'lucide-react';
 
 const PAY_FIELDS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
@@ -22,11 +22,13 @@ export default function BillingView() {
   const [generatingRent, setGeneratingRent] = useState(false);
   const [message, setMessage] = useState('');
   const [smsResult, setSmsResult] = useState(null);
-  const [editingOther, setEditingOther] = useState(null); // billId
+  const [editingOther, setEditingOther] = useState(null);
   const [otherLabel, setOtherLabel] = useState('');
   const [otherAmount, setOtherAmount] = useState('');
-  const [compareData, setCompareData] = useState(null); // { rows, summary }
+  const [compareData, setCompareData] = useState(null);
   const [applying, setApplying] = useState(false);
+  const [editingBill, setEditingBill] = useState(null); // billId for inline edit
+  const [editForm, setEditForm] = useState({});
 
   const loadBills = useCallback(async () => {
     try {
@@ -125,6 +127,42 @@ export default function BillingView() {
     setOtherAmount(String(bill.other_amount || ''));
   };
 
+  // ─── 인라인 금액 편집 ─────────────────
+  const startEditBill = (bill) => {
+    setEditingBill(bill.id);
+    setEditForm({
+      rent_amount: bill.rent_amount || 0,
+      maintenance_fee: bill.maintenance_fee || 0,
+      electricity_amount: bill.electricity_amount || 0,
+      water_amount: bill.water_amount || 0,
+      other_amount: bill.other_amount || 0,
+      other_label: bill.other_label || '',
+    });
+  };
+
+  const handleSaveBill = async (billId) => {
+    try {
+      const res = await authFetch(`${API_BASE}/monthly-bills/${billId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      });
+      if (res.ok) {
+        setEditingBill(null);
+        loadBills();
+      }
+    } catch {}
+  };
+
+  // ─── 청구건 삭제 ─────────────────
+  const handleDeleteBill = async (billId) => {
+    if (!confirm('이 청구건을 삭제하시겠습니까?')) return;
+    try {
+      const res = await authFetch(`${API_BASE}/monthly-bills/${billId}`, { method: 'DELETE' });
+      if (res.ok) loadBills();
+    } catch {}
+  };
+
   const HEADER_MAP = { '층': 'floor', '업체명': 'company_name', '임대료': 'rent_amount', '관리비': 'maintenance_fee', '전기': 'electricity_amount', '수도': 'water_amount', '기타명': 'other_label', '기타': 'other_amount' };
   const COMPARE_FIELDS = [
     { key: 'rent_amount', label: '임대료' },
@@ -172,7 +210,6 @@ export default function BillingView() {
       return mapped;
     }).filter((r) => r.floor != null);
 
-    // Build comparison rows
     const rows = [];
     let matchCount = 0, diffCount = 0, newCount = 0, unmatchedFloors = [];
     for (const u of uploaded) {
@@ -187,7 +224,6 @@ export default function BillingView() {
         else { matchCount++; }
         rows.push({ floor: u.floor, label: key === 'other_amount' ? (u.other_label || bill.other_label || '기타') : label, key, existing, upload, status });
       }
-      // other_label comparison (non-numeric)
     }
     setCompareData({ rows, uploaded, matchCount, diffCount, newCount, unmatchedFloors });
   };
@@ -402,16 +438,27 @@ export default function BillingView() {
           const totalCount = activeFields.length + (otherActive ? 1 : 0);
           const paidCount = activeFields.filter(({ field }) => bill[field]).length + (otherActive && bill.other_paid ? 1 : 0);
           const allPaid = totalCount > 0 && paidCount === totalCount;
+          const isEditing = editingBill === bill.id;
 
           return (
             <div key={bill.id} className={`bg-white rounded-xl border-2 p-4 ${allPaid ? 'border-green-200' : 'border-gray-200'}`}>
-              {/* Header: 업체명 + 상태 + 합계 */}
+              {/* Header: 업체명 + 수정/삭제 + 상태 + 합계 */}
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
                     {bill.floor}F
                   </span>
                   <span className="font-semibold text-gray-900 text-sm">{bill.company_name}</span>
+                  {!isEditing && (
+                    <div className="flex items-center gap-0.5">
+                      <button onClick={() => startEditBill(bill)} className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="금액 수정">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => handleDeleteBill(bill.id)} className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="삭제">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
@@ -422,6 +469,47 @@ export default function BillingView() {
                   <span className="font-bold text-sm">{fmt(totalWithVat)}원</span>
                 </div>
               </div>
+
+              {/* 인라인 편집 모드 */}
+              {isEditing && (
+                <div className="mb-3 border border-blue-200 rounded-lg p-3 bg-blue-50/30 space-y-2">
+                  {[
+                    { key: 'rent_amount', label: '임대료' },
+                    { key: 'maintenance_fee', label: '관리비' },
+                    { key: 'electricity_amount', label: '전기' },
+                    { key: 'water_amount', label: '수도' },
+                    { key: 'other_amount', label: '기타 금액' },
+                  ].map(({ key, label }) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="text-xs text-gray-600 w-16">{label}</span>
+                      <input
+                        type="number"
+                        value={editForm[key] || ''}
+                        onChange={(e) => setEditForm({ ...editForm, [key]: Number(e.target.value) || 0 })}
+                        className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-600 w-16">기타명</span>
+                    <input
+                      type="text"
+                      value={editForm.other_label || ''}
+                      onChange={(e) => setEditForm({ ...editForm, other_label: e.target.value })}
+                      placeholder="예: 재활용비"
+                      className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm"
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end pt-1">
+                    <button onClick={() => setEditingBill(null)} className="flex items-center gap-1 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700">
+                      <X className="w-3.5 h-3.5" /> 취소
+                    </button>
+                    <button onClick={() => handleSaveBill(bill.id)} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
+                      <Check className="w-3.5 h-3.5" /> 저장
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* 항목 리스트 */}
               <div className="border border-gray-100 rounded-lg overflow-hidden">
@@ -447,7 +535,7 @@ export default function BillingView() {
                             : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                         }`}
                       >
-                        {isPaid ? '완료' : '대기'}
+                        {isPaid ? '입금완료' : '대기'}
                       </button>
                     </div>
                   );
@@ -475,7 +563,7 @@ export default function BillingView() {
                           : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                       }`}
                     >
-                      {bill.other_paid ? '완료' : '대기'}
+                      {bill.other_paid ? '입금완료' : '대기'}
                     </button>
                   </div>
                 )}
