@@ -144,6 +144,9 @@ const pool = new Pool({
     ALTER TABLE tenants ALTER COLUMN must_change_password SET NOT NULL
   `);
 
+  // 검침 면제 (예: 로데오데이 — 별도 계량기 없음)
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS meter_exempt BOOLEAN NOT NULL DEFAULT FALSE`);
+
   // 사업자등록증 이미지 컬럼
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS biz_doc BYTEA`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS biz_doc_filename TEXT`);
@@ -545,6 +548,7 @@ const pool = new Pool({
         floors,
         role: "tenant",
         mustChangePassword: !!tenant.must_change_password,
+        meterExempt: !!tenant.meter_exempt,
         createdAt: Date.now(),
       });
       return res.json({
@@ -553,6 +557,7 @@ const pool = new Pool({
         floors,
         role: "tenant",
         mustChangePassword: !!tenant.must_change_password,
+        meterExempt: !!tenant.meter_exempt,
         token,
       });
     } catch (err) {

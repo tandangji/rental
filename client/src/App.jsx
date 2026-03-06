@@ -81,7 +81,7 @@ export default function App() {
 
   const isAdmin = currentUser.role === 'admin';
   const needsPasswordSetup = currentUser.role === 'tenant' && currentUser.mustChangePassword;
-  const tabs = isAdmin ? ADMIN_TABS : TENANT_TABS;
+  const tabs = isAdmin ? ADMIN_TABS : currentUser.meterExempt ? TENANT_TABS.filter(t => t.id !== 'upload') : TENANT_TABS;
 
   const renderContent = () => {
     if (isAdmin) {
