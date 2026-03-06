@@ -108,6 +108,22 @@ const pool = new Pool({
   await pool.query(`
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_day INTEGER NOT NULL DEFAULT 1
   `);
+
+  // ─── tenant_floors (다중층 입주사 지원) — 다른 마이그레이션보다 먼저 생성 ───
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_floors (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      floor INTEGER UNIQUE NOT NULL
+    )
+  `);
+  // 기존 tenants.floor → tenant_floors 이관
+  await pool.query(`
+    INSERT INTO tenant_floors (tenant_id, floor)
+    SELECT id, floor FROM tenants WHERE floor IS NOT NULL
+    ON CONFLICT DO NOTHING
+  `);
+
   // 최초 비밀번호(예: 0001) 사용 여부 플래그
   await pool.query(`
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN
@@ -340,20 +356,6 @@ const pool = new Pool({
     )
   `);
 
-  // ─── tenant_floors (다중층 입주사 지원) ───────────────────
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS tenant_floors (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-      floor INTEGER UNIQUE NOT NULL
-    )
-  `);
-  // 기존 tenants.floor → tenant_floors 이관
-  await pool.query(`
-    INSERT INTO tenant_floors (tenant_id, floor)
-    SELECT id, floor FROM tenants WHERE floor IS NOT NULL
-    ON CONFLICT DO NOTHING
-  `);
   // meter_readings에 floor 컬럼 추가 + 백필
   await pool.query(`ALTER TABLE meter_readings ADD COLUMN IF NOT EXISTS floor INTEGER`);
   await pool.query(`
