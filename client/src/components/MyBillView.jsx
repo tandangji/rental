@@ -141,7 +141,7 @@ export default function MyBillView({ user, settings }) {
                           {isPaid ? '납부완료' : '납부대기'}
                         </span>
                         {isPaid && bill[dateField] && (
-                          <span className="text-[11px] text-gray-400">{bill[dateField]}</span>
+                          <span className="text-[11px] text-gray-400">{new Date(bill[dateField]).toLocaleDateString('ko-KR')}</span>
                         )}
                       </div>
                     </div>
