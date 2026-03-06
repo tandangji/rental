@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BuildingBillForm from './BuildingBillForm';
-import { FileText, MessageSquare, Plus, Pencil } from 'lucide-react';
+import { FileText, MessageSquare, Plus, Pencil, Upload, Download } from 'lucide-react';
 
 const PAY_FIELDS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
@@ -25,6 +25,8 @@ export default function BillingView() {
   const [editingOther, setEditingOther] = useState(null); // billId
   const [otherLabel, setOtherLabel] = useState('');
   const [otherAmount, setOtherAmount] = useState('');
+  const [compareData, setCompareData] = useState(null); // { rows, summary }
+  const [applying, setApplying] = useState(false);
 
   const loadBills = useCallback(async () => {
     try {
@@ -123,6 +125,100 @@ export default function BillingView() {
     setOtherAmount(String(bill.other_amount || ''));
   };
 
+  const HEADER_MAP = { '층': 'floor', '업체명': 'company_name', '임대료': 'rent_amount', '관리비': 'maintenance_fee', '전기': 'electricity_amount', '수도': 'water_amount', '기타명': 'other_label', '기타': 'other_amount' };
+  const COMPARE_FIELDS = [
+    { key: 'rent_amount', label: '임대료' },
+    { key: 'maintenance_fee', label: '관리비' },
+    { key: 'electricity_amount', label: '전기' },
+    { key: 'water_amount', label: '수도' },
+    { key: 'other_amount', label: '기타' },
+  ];
+
+  const handleDownloadTemplate = async () => {
+    const XLSX = (await import('xlsx')).default || (await import('xlsx'));
+    const data = bills.map((b) => ({
+      '층': b.floor,
+      '업체명': b.company_name,
+      '임대료': b.rent_amount || 0,
+      '관리비': b.maintenance_fee || 0,
+      '전기': b.electricity_amount || 0,
+      '수도': b.water_amount || 0,
+      '기타명': b.other_label || '',
+      '기타': b.other_amount || 0,
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '청구서');
+    XLSX.writeFile(wb, `청구서_${year}년${month}월.xlsx`);
+  };
+
+  const handleUploadExcel = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    const XLSX = (await import('xlsx')).default || (await import('xlsx'));
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(sheet);
+
+    const uploaded = raw.map((row) => {
+      const mapped = {};
+      for (const [k, v] of Object.entries(row)) {
+        const field = HEADER_MAP[k.trim()];
+        if (field) mapped[field] = field === 'other_label' || field === 'company_name' ? String(v || '') : Number(v) || 0;
+      }
+      if (mapped.other_amount > 0 && !mapped.other_label) mapped.other_label = '기타';
+      return mapped;
+    }).filter((r) => r.floor != null);
+
+    // Build comparison rows
+    const rows = [];
+    let matchCount = 0, diffCount = 0, newCount = 0, unmatchedFloors = [];
+    for (const u of uploaded) {
+      const bill = bills.find((b) => b.floor === u.floor);
+      if (!bill) { unmatchedFloors.push(u.floor); continue; }
+      for (const { key, label } of COMPARE_FIELDS) {
+        const existing = bill[key] || 0;
+        const upload = u[key] || 0;
+        let status = 'match';
+        if (existing === 0 && upload > 0) { status = 'new'; newCount++; }
+        else if (existing !== upload) { status = 'diff'; diffCount++; }
+        else { matchCount++; }
+        rows.push({ floor: u.floor, label: key === 'other_amount' ? (u.other_label || bill.other_label || '기타') : label, key, existing, upload, status });
+      }
+      // other_label comparison (non-numeric)
+    }
+    setCompareData({ rows, uploaded, matchCount, diffCount, newCount, unmatchedFloors });
+  };
+
+  const handleApplyAll = async () => {
+    if (!compareData) return;
+    const hasDiff = compareData.rows.some((r) => r.status !== 'match');
+    if (!hasDiff) { setMessage('모든 항목이 일치합니다'); setCompareData(null); setTimeout(() => setMessage(''), 3000); return; }
+    setApplying(true);
+    try {
+      const res = await authFetch(`${API_BASE}/monthly-bills/bulk-update`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year, month, updates: compareData.uploaded }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage(`${data.updated}건 반영 완료${data.errors?.length ? ` (오류: ${data.errors.join(', ')})` : ''}`);
+        setCompareData(null);
+        loadBills();
+      } else {
+        setMessage(data.error);
+      }
+    } catch {
+      setMessage('반영 실패');
+    } finally {
+      setApplying(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
   const fmt = (n) => (n || 0).toLocaleString();
 
   const billTotal = (b) => {
@@ -193,6 +289,88 @@ export default function BillingView() {
           </button>
         )}
       </div>
+
+      {/* Excel 업로드/다운로드 */}
+      {bills.length > 0 && (
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={handleDownloadTemplate}
+            className="flex items-center gap-1 px-3 py-2 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            <Download className="w-3.5 h-3.5" /> 양식 다운로드
+          </button>
+          <label className="flex items-center gap-1 px-3 py-2 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer">
+            <Upload className="w-3.5 h-3.5" /> Excel 업로드
+            <input type="file" accept=".xlsx,.xls" onChange={handleUploadExcel} className="hidden" />
+          </label>
+        </div>
+      )}
+
+      {/* 대조 결과 */}
+      {compareData && (
+        <div className="mb-4 bg-white rounded-xl border-2 border-blue-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-sm text-gray-900">파일 대조 결과</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={handleApplyAll}
+                disabled={applying || !compareData.rows.some((r) => r.status !== 'match')}
+                className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {applying ? '반영 중...' : '전체 반영'}
+              </button>
+              <button
+                onClick={() => setCompareData(null)}
+                className="px-3 py-1.5 text-xs text-gray-500 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+          {compareData.unmatchedFloors.length > 0 && (
+            <div className="mb-2 p-2 bg-red-50 text-red-700 text-xs rounded">
+              매칭 안 됨: {compareData.unmatchedFloors.map((f) => `${f}층`).join(', ')}
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-200 text-gray-500">
+                  <th className="text-left py-1.5 px-2">층</th>
+                  <th className="text-left py-1.5 px-2">항목</th>
+                  <th className="text-right py-1.5 px-2">기존값</th>
+                  <th className="text-right py-1.5 px-2">업로드값</th>
+                  <th className="text-center py-1.5 px-2">상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {compareData.rows.map((r, i) => (
+                  <tr
+                    key={i}
+                    className={
+                      r.status === 'diff' ? 'bg-amber-50' :
+                      r.status === 'new' ? 'bg-blue-50' : ''
+                    }
+                  >
+                    <td className="py-1.5 px-2 font-medium">{r.floor}F</td>
+                    <td className="py-1.5 px-2">{r.label}</td>
+                    <td className={`py-1.5 px-2 text-right ${r.status === 'match' ? 'text-gray-400' : ''}`}>{fmt(r.existing)}</td>
+                    <td className={`py-1.5 px-2 text-right ${r.status === 'match' ? 'text-gray-400' : 'font-medium'}`}>{fmt(r.upload)}</td>
+                    <td className="py-1.5 px-2 text-center">
+                      {r.status === 'match' && <span className="text-gray-400">일치</span>}
+                      {r.status === 'diff' && <span className="text-amber-600 font-medium">차이</span>}
+                      {r.status === 'new' && <span className="text-blue-600 font-medium">신규 +</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            차이 {compareData.diffCount}건 / 신규 {compareData.newCount}건 / 일치 {compareData.matchCount}건
+          </p>
+        </div>
+      )}
 
       {message && (
         <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-700 text-sm">{message}</div>

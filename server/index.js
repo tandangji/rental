@@ -1042,6 +1042,39 @@ const pool = new Pool({
     }
   });
 
+  // Bulk update monthly bills (Excel 대조 반영)
+  app.patch("/monthly-bills/bulk-update", requireAdmin, async (req, res) => {
+    const { year, month, updates } = req.body;
+    if (!year || !month || !Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({ error: "year, month, updates 배열이 필요합니다" });
+    }
+    try {
+      let updated = 0;
+      const errors = [];
+      for (const u of updates) {
+        const { floor, rent_amount, maintenance_fee, electricity_amount, water_amount, other_amount, other_label } = u;
+        if (floor == null) { errors.push("floor 누락"); continue; }
+        const { rows } = await pool.query(
+          "SELECT id FROM tenants WHERE floor = $1 AND is_active = true", [floor]
+        );
+        if (rows.length === 0) { errors.push(`${floor}층: 입주사 없음`); continue; }
+        const tenantId = rows[0].id;
+        await pool.query(
+          `INSERT INTO monthly_bills (tenant_id, year, month, rent_amount, maintenance_fee, electricity_amount, water_amount, other_amount, other_label)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (tenant_id, year, month) DO UPDATE SET
+             rent_amount=$4, maintenance_fee=$5, electricity_amount=$6, water_amount=$7, other_amount=$8, other_label=$9`,
+          [tenantId, year, month, rent_amount || 0, maintenance_fee || 0, electricity_amount || 0, water_amount || 0, other_amount || 0, other_label || null]
+        );
+        updated++;
+      }
+      res.json({ updated, errors });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
   // ─── Tax Invoices API (항목별 개별 발행) ─────────────────
   const ITEM_TYPES = [
     { type: "rent", name: "임대료", amountField: "rent_amount" },
