@@ -75,8 +75,8 @@ export default function MeterUpload({ user }) {
         const data = await res.json();
         setMessage(data.error || '업로드 실패');
       }
-    } catch {
-      setMessage('업로드 실패');
+    } catch (err) {
+      setMessage('업로드 실패: ' + (err.message || err));
     } finally {
       setUploading(null);
     }
