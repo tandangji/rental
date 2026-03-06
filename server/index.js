@@ -412,8 +412,14 @@ const pool = new Pool({
         }
       }
 
-      // tax_invoices, inquiries → primary로 재할당
+      // tax_invoices → primary로 재할당 (중복 키는 삭제)
+      await pool.query(
+        `DELETE FROM tax_invoices WHERE tenant_id = $1
+         AND (year, month, item_type) IN (SELECT year, month, item_type FROM tax_invoices WHERE tenant_id = $2)`,
+        [secondary.id, primary.id]
+      );
       await pool.query(`UPDATE tax_invoices SET tenant_id = $1 WHERE tenant_id = $2`, [primary.id, secondary.id]);
+      // inquiries → primary로 재할당
       await pool.query(`UPDATE inquiries SET tenant_id = $1 WHERE tenant_id = $2`, [primary.id, secondary.id]);
 
       // secondary 비활성화 + tenant_floors에서 제거
