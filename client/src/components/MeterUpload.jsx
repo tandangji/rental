@@ -33,8 +33,6 @@ export default function MeterUpload({ user }) {
   const fileRefs = useRef({});
 
   const userFloors = user.floors || [];
-  const isMultiFloor = userFloors.length > 1;
-  const [selectedFloor, setSelectedFloor] = useState(userFloors[0] || null);
 
   const kst = getKstNow();
   const kstDay = kst.getDate();
@@ -51,11 +49,11 @@ export default function MeterUpload({ user }) {
 
   useEffect(() => { loadReadings(); }, [year, month]);
 
-  const getReading = (type) => readings.find((r) => r.utility_type === type && (!isMultiFloor || r.floor === selectedFloor));
+  const getReading = (type, floor) => readings.find((r) => r.utility_type === type && r.floor === floor);
 
-  const handleUpload = async (utilityType, file) => {
+  const handleUpload = async (utilityType, floor, file) => {
     if (!file) return;
-    setUploading(utilityType);
+    setUploading(`${floor}-${utilityType}`);
     setMessage('');
     try {
       const base64 = await compressImage(file);
@@ -67,11 +65,11 @@ export default function MeterUpload({ user }) {
           utility_type: utilityType,
           photo_base64: base64,
           photo_filename: file.name,
-          floor: selectedFloor,
+          floor,
         }),
       });
       if (res.ok) {
-        setMessage(`${ALL_UTILITY_TYPES.find(u => u.key === utilityType).label} 사진 업로드 완료`);
+        setMessage(`${floor}층 ${ALL_UTILITY_TYPES.find(u => u.key === utilityType).label} 사진 업로드 완료`);
         loadReadings();
       } else {
         const data = await res.json();
@@ -104,25 +102,6 @@ export default function MeterUpload({ user }) {
         </select>
       </div>
 
-      {/* 다중층 탭 */}
-      {isMultiFloor && (
-        <div className="flex gap-2 mb-4">
-          {userFloors.map((f) => (
-            <button
-              key={f}
-              onClick={() => setSelectedFloor(f)}
-              className={`flex-1 py-2 text-sm rounded-lg border font-medium transition-colors ${
-                selectedFloor === f
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
-              }`}
-            >
-              {f}층
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* 검침 기간 배너 */}
       {isElecPeriod && (
         <div className="mb-3 p-3 rounded-xl bg-yellow-50 border border-yellow-200 flex items-start gap-2">
@@ -152,85 +131,95 @@ export default function MeterUpload({ user }) {
         <div className="mb-4 p-3 rounded-lg bg-green-50 text-green-700 text-sm">{message}</div>
       )}
 
-      <div className="space-y-3">
-        {ALL_UTILITY_TYPES.filter(u => u.key === 'electricity' || month % 2 === 1).map(({ key, label, icon: Icon, color, bg }) => {
-          const reading = getReading(key);
-          const hasPhoto = reading?.uploaded_at;
-          const canUpload = !isCurrentMonth || isUploadPeriod(key);
-          const disabledMsg = key === 'electricity'
-            ? '검침 기간은 매월 22일입니다'
-            : '검침 기간은 홀수달 6일입니다';
+      <div className="space-y-4">
+        {userFloors.map((floor) => (
+          <div key={floor}>
+            {userFloors.length > 1 && (
+              <p className="text-sm font-bold text-gray-700 mb-2">{floor}층</p>
+            )}
+            <div className="space-y-3">
+              {ALL_UTILITY_TYPES.filter(u => u.key === 'electricity' || month % 2 === 1).map(({ key, label, icon: Icon, color, bg }) => {
+                const reading = getReading(key, floor);
+                const hasPhoto = reading?.uploaded_at;
+                const canUpload = !isCurrentMonth || isUploadPeriod(key);
+                const disabledMsg = key === 'electricity'
+                  ? '검침 기간은 매월 22일입니다'
+                  : '검침 기간은 홀수달 6일입니다';
+                const refKey = `${floor}-${key}`;
 
-          return (
-            <div key={key} className={`rounded-xl border-2 p-4 ${hasPhoto ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white'}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full ${bg} flex items-center justify-center`}>
-                    <Icon className={`w-5 h-5 ${color}`} />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">{label} 계량기</p>
-                    {hasPhoto ? (
-                      <p className="text-xs text-green-600 flex items-center gap-1">
-                        <Check className="w-3 h-3" /> 업로드 완료
-                        <span className="text-gray-400 ml-1">
-                          {new Date(reading.uploaded_at).toLocaleDateString('ko-KR')}
-                        </span>
-                      </p>
-                    ) : !canUpload ? (
-                      <p className="text-xs text-gray-400 flex items-center gap-1">
-                        <Info className="w-3 h-3" /> {disabledMsg}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-gray-400">사진을 촬영해주세요</p>
+                return (
+                  <div key={refKey} className={`rounded-xl border-2 p-4 ${hasPhoto ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full ${bg} flex items-center justify-center`}>
+                          <Icon className={`w-5 h-5 ${color}`} />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900">{label} 계량기</p>
+                          {hasPhoto ? (
+                            <p className="text-xs text-green-600 flex items-center gap-1">
+                              <Check className="w-3 h-3" /> 업로드 완료
+                              <span className="text-gray-400 ml-1">
+                                {new Date(reading.uploaded_at).toLocaleDateString('ko-KR')}
+                              </span>
+                            </p>
+                          ) : !canUpload ? (
+                            <p className="text-xs text-gray-400 flex items-center gap-1">
+                              <Info className="w-3 h-3" /> {disabledMsg}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-gray-400">사진을 촬영해주세요</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <input
+                          ref={(el) => (fileRefs.current[refKey] = el)}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={(e) => handleUpload(key, floor, e.target.files?.[0])}
+                        />
+                        <button
+                          onClick={() => fileRefs.current[refKey]?.click()}
+                          disabled={uploading === refKey || !canUpload}
+                          className={`flex items-center gap-1 px-3 py-2 text-sm rounded-lg min-h-[44px] ${
+                            !canUpload
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : hasPhoto
+                                ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                          } disabled:opacity-50`}
+                        >
+                          {uploading === refKey ? (
+                            <Upload className="w-4 h-4 animate-pulse" />
+                          ) : (
+                            <Camera className="w-4 h-4" />
+                          )}
+                          {!canUpload ? '기간 외' : hasPhoto ? '재업로드' : '촬영'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Photo preview */}
+                    {hasPhoto && reading.id && (
+                      <div className="mt-3">
+                        <img
+                          src={`${API_BASE}/meter-readings/${reading.id}/photo?token=${getToken()}`}
+                          alt={`${floor}층 ${label} 계량기`}
+                          className="w-full max-h-48 object-contain rounded-lg bg-gray-100"
+                          loading="lazy"
+                        />
+                      </div>
                     )}
                   </div>
-                </div>
-
-                <div>
-                  <input
-                    ref={(el) => (fileRefs.current[key] = el)}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={(e) => handleUpload(key, e.target.files?.[0])}
-                  />
-                  <button
-                    onClick={() => fileRefs.current[key]?.click()}
-                    disabled={uploading === key || !canUpload}
-                    className={`flex items-center gap-1 px-3 py-2 text-sm rounded-lg min-h-[44px] ${
-                      !canUpload
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : hasPhoto
-                          ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
-                    } disabled:opacity-50`}
-                  >
-                    {uploading === key ? (
-                      <Upload className="w-4 h-4 animate-pulse" />
-                    ) : (
-                      <Camera className="w-4 h-4" />
-                    )}
-                    {!canUpload ? '기간 외' : hasPhoto ? '재업로드' : '촬영'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Photo preview */}
-              {hasPhoto && reading.id && (
-                <div className="mt-3">
-                  <img
-                    src={`${API_BASE}/meter-readings/${reading.id}/photo?token=${getToken()}`}
-                    alt={`${label} 계량기`}
-                    className="w-full max-h-48 object-contain rounded-lg bg-gray-100"
-                    loading="lazy"
-                  />
-                </div>
-              )}
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </div>
   );
