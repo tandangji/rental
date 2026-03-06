@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BankInfo from './BankInfo';
-import { Download } from 'lucide-react';
+import { Download, FileText } from 'lucide-react';
 
 const ITEMS = [
-  { field: 'rent_paid', label: '임대료', amountField: 'rent_amount', dateField: 'rent_paid_date' },
-  { field: 'maintenance_paid', label: '관리비', amountField: 'maintenance_fee', dateField: 'maintenance_paid_date' },
-  { field: 'electricity_paid', label: '전기', amountField: 'electricity_amount', dateField: 'electricity_paid_date' },
-  { field: 'water_paid', label: '수도', amountField: 'water_amount', dateField: 'water_paid_date', noVat: true },
-  { field: 'other_paid', label: '기타', amountField: 'other_amount', dateField: 'other_paid_date', dynamic: true },
+  { field: 'rent_paid', label: '임대료', amountField: 'rent_amount', dateField: 'rent_paid_date', itemType: 'rent' },
+  { field: 'maintenance_paid', label: '관리비', amountField: 'maintenance_fee', dateField: 'maintenance_paid_date', itemType: 'maintenance' },
+  { field: 'electricity_paid', label: '전기', amountField: 'electricity_amount', dateField: 'electricity_paid_date', itemType: 'electricity' },
+  { field: 'water_paid', label: '수도', amountField: 'water_amount', dateField: 'water_paid_date', noVat: true, itemType: 'water' },
+  { field: 'other_paid', label: '기타', amountField: 'other_amount', dateField: 'other_paid_date', dynamic: true, itemType: 'other' },
 ];
 
 const vat = (n, noVat) => noVat ? 0 : Math.round((n || 0) * 0.1);
@@ -22,16 +22,20 @@ export default function MyBillView({ user, settings }) {
   const [year, setYear] = useState(prevYear);
   const [month, setMonth] = useState(prevMonth);
   const [bills, setBills] = useState([]);
+  const [taxInvoices, setTaxInvoices] = useState([]);
   const [downloading, setDownloading] = useState(false);
   const billRef = useRef(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await authFetch(`${API_BASE}/monthly-bills?year=${year}&month=${month}`);
-        if (res.ok) setBills(await res.json());
-        else setBills([]);
-      } catch { setBills([]); }
+        const [bRes, tRes] = await Promise.all([
+          authFetch(`${API_BASE}/monthly-bills?year=${year}&month=${month}`),
+          authFetch(`${API_BASE}/tax-invoices?year=${year}&month=${month}`),
+        ]);
+        if (bRes.ok) setBills(await bRes.json()); else setBills([]);
+        if (tRes.ok) setTaxInvoices(await tRes.json()); else setTaxInvoices([]);
+      } catch { setBills([]); setTaxInvoices([]); }
     })();
   }, [year, month]);
 
@@ -110,18 +114,25 @@ export default function MyBillView({ user, settings }) {
             </div>
 
             <div className="space-y-3">
-              {ITEMS.map(({ field, label, amountField, dateField, noVat, dynamic }) => {
+              {ITEMS.map(({ field, label, amountField, dateField, noVat, dynamic, itemType }) => {
                 const amount = bill[amountField];
                 if (amount === 0) return null;
                 const displayLabel = dynamic ? (bill.other_label || label) : label;
                 const isPaid = bill[field];
                 const vatAmt = vat(amount, noVat);
                 const total = amount + vatAmt;
+                const taxInv = taxInvoices.find((t) => t.item_type === itemType);
+                const isIssued = taxInv?.is_issued;
                 return (
                   <div key={field} className="border-b border-gray-50 last:border-0 pb-2 last:pb-0">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-medium text-gray-900">{displayLabel}</span>
-                      <div className="text-right">
+                      <div className="flex items-center gap-1.5">
+                        {isIssued && (
+                          <span className="flex items-center gap-0.5 px-2 py-0.5 text-[11px] font-medium rounded-full bg-blue-100 text-blue-700">
+                            <FileText className="w-3 h-3" />발행
+                          </span>
+                        )}
                         <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
                           isPaid
                             ? 'bg-green-100 text-green-700'
@@ -130,7 +141,7 @@ export default function MyBillView({ user, settings }) {
                           {isPaid ? '납부완료' : '납부대기'}
                         </span>
                         {isPaid && bill[dateField] && (
-                          <p className="text-xs text-gray-400 mt-0.5">{bill[dateField]}</p>
+                          <span className="text-[11px] text-gray-400">{bill[dateField]}</span>
                         )}
                       </div>
                     </div>
