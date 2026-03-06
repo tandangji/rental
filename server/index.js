@@ -376,7 +376,8 @@ const pool = new Pool({
       const primary = vms[0]; // 2층 (MIN floor)
       const secondary = vms[1]; // 4층
 
-      // tenant_floors: primary에 secondary floor 추가
+      // tenant_floors: secondary floor를 먼저 해제한 뒤 primary에 추가 (floor UNIQUE 충돌 방지)
+      await pool.query(`DELETE FROM tenant_floors WHERE tenant_id = $1`, [secondary.id]);
       await pool.query(
         `INSERT INTO tenant_floors (tenant_id, floor) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [primary.id, secondary.floor]
