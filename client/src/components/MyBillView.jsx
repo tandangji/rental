@@ -249,9 +249,10 @@ export default function MyBillView({ user, settings }) {
                 <div style={s.title}>청 구 서</div>
                 <div style={s.companyInfo}>
                   <div style={s.companyName}>{settings?.tax_supplier_company || settings?.building_name || ''}</div>
-                  <div>{settings?.tax_supplier_address || ''}</div>
+                  <div>{settings?.tax_supplier_biz_no || settings?.landlord_business_number || ''}</div>
                   <div>{settings?.landlord_phone || ''}</div>
                   <div>{settings?.tax_supplier_email || ''}</div>
+                  <div>{settings?.tax_supplier_address || ''}</div>
                 </div>
               </div>
 
