@@ -59,7 +59,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (currentUser && !currentUser.mustChangePassword) loadSettings();
+    if (currentUser) loadSettings();
   }, [currentUser, loadSettings]);
 
   const handleLogin = (user) => {
@@ -95,13 +95,6 @@ export default function App() {
         default: return <AdminDashboard />;
       }
     } else {
-      if (needsPasswordSetup) {
-        return (
-          <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-gray-600">
-            비밀번호 초기 설정을 완료하면 서비스를 이용할 수 있습니다.
-          </div>
-        );
-      }
       switch (activeTab) {
         case 'home': return <TenantDashboard user={currentUser} settings={settings} />;
         case 'upload': return <MeterUpload user={currentUser} />;
