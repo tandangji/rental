@@ -65,7 +65,7 @@ export default function MeterOverview() {
   };
 
   const handleDeletePhoto = async (readingId) => {
-    if (!confirm('이 사진을 삭제하시겠습니까?')) return;
+    if (!confirm('검침 사진이 영구 삭제됩니다. 삭제하시겠습니까?')) return;
     try {
       await authFetch(`${API_BASE}/meter-readings/${readingId}/photo`, { method: 'DELETE' });
       load();
