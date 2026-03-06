@@ -203,6 +203,7 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | POST | /monthly-bills/generate-rent | admin | 임대료/관리비 수동 발행 (cron 누락 시 fallback) |
 | PATCH | /monthly-bills/:id/pay | admin | 납부 확인 토글 |
 | PATCH | /monthly-bills/:id/other | admin | 기타 항목 수정 (other_amount, other_label) |
+| PATCH | /monthly-bills/bulk-update | admin | Excel 대조 일괄 반영 (floor 기준 매칭, UPSERT) |
 
 ### 세금계산서
 | Method | Path | 권한 | 설명 |
@@ -326,3 +327,4 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v2.0 | 2026-03-05 | 검침 자동화 워크플로우 — 업로드 기간 제한(전기 22일/수도 홀수달 6일), 자동 배분 cron(전기 24일/수도 8일), 미제출 1.5배 자동 적용, 검침일 배너 알림, 관리자 검침 일정 카드, 수도세 면세 처리, 월 선택기, 기본월 전월 설정 |
 | v2.1 | 2026-03-05 | 홈택스 XLSX 세금계산서 — CSV→XLSX 변환(59컬럼 홈택스 양식), 공급자/공급받는자 정보 별도 관리(settings+tenants tax_*), 동적 월 품목명, 수도 면세 제외 |
 | v2.2 | 2026-03-06 | 기타(other) 청구 항목 추가 — other_amount/other_label/other_paid 컬럼, 인라인 편집 UI, 세금계산서 자동 포함, 검침일 단일화(22일/6일), 전자세금계산서 홈택스 안내 추가 |
+| v2.3 | 2026-03-06 | Excel 대조 기능 — 양식 다운로드(XLSX), 업로드→파싱→대조 테이블(일치/차이/신규 하이라이트), 전체 반영(bulk-update API) |
