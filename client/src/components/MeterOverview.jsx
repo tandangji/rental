@@ -116,6 +116,19 @@ export default function MeterOverview() {
         <p>미제출 입주사는 전월 사용량의 1.5배로 자동 적용됩니다.</p>
       </div>
 
+      <div className="mb-4 p-3 rounded-lg bg-gray-50 text-gray-600 text-xs space-y-2">
+        <div>
+          <p className="font-semibold text-gray-700">전기 (한전)</p>
+          <p>검침 기간: 전월 22일 ~ 당월 21일 사용분</p>
+          <p>청구서 발송: 익월 4일경 | 납기일: 익월 15일</p>
+        </div>
+        <div>
+          <p className="font-semibold text-gray-700">상하수도</p>
+          <p>검침일: 홀수달 6일</p>
+          <p>청구서 송달: 검침월 16일경 | 납기일: 검침월 말일</p>
+        </div>
+      </div>
+
       {smsResult && (
         <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-700 text-sm">
           {smsResult.message}
