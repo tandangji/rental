@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Users, Receipt, Camera, AlertTriangle, Check, TrendingUp, Zap, Droplets, Clock, ChevronLeft, ChevronRight, Handshake } from 'lucide-react';
+import { Users, Receipt, Camera, AlertTriangle, Check, TrendingUp, Zap, Droplets, Clock, ChevronLeft, ChevronRight, Handshake, Calendar } from 'lucide-react';
 
 export default function AdminDashboard() {
   const kst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
@@ -14,6 +14,7 @@ export default function AdminDashboard() {
   const [bills, setBills] = useState([]);
   const [readings, setReadings] = useState([]);
   const [partnerSummary, setPartnerSummary] = useState(null);
+  const [paymentSchedule, setPaymentSchedule] = useState([]);
 
   const load = useCallback(async () => {
     try {
@@ -35,8 +36,16 @@ export default function AdminDashboard() {
     } catch {}
   }, []);
 
+  const loadPaymentSchedule = useCallback(async () => {
+    try {
+      const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+      const res = await authFetch(`${API_BASE}/partner-payments/schedule?year=${now.getFullYear()}&month=${now.getMonth() + 1}`);
+      if (res.ok) setPaymentSchedule(await res.json());
+    } catch {}
+  }, []);
+
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { loadPartnerSummary(); }, [loadPartnerSummary]);
+  useEffect(() => { loadPartnerSummary(); loadPaymentSchedule(); }, [loadPartnerSummary, loadPaymentSchedule]);
 
   // 월 이동
   const goMonth = (delta) => {
@@ -177,6 +186,57 @@ export default function AdminDashboard() {
               <p className="text-sm font-bold text-green-700">{fmt(partnerSummary.paid.total)}원</p>
               <p className="text-[10px] text-gray-400">{partnerSummary.paid.count}건</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 이번 달 지급 일정 */}
+      {paymentSchedule.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+          <h3 className="font-semibold text-gray-900 text-sm mb-2 flex items-center gap-1.5">
+            <Calendar className="w-4 h-4 text-gray-500" /> 이번 달 지급 일정
+          </h3>
+          <div className="space-y-1.5">
+            {paymentSchedule.map((s) => {
+              const dDay = s.payment_day ? s.payment_day - kstDay : null;
+              let dDayText, dDayColor;
+              if (s.payment_id && s.is_paid) {
+                dDayText = '완료';
+                dDayColor = 'bg-green-100 text-green-700';
+              } else if (dDay === null) {
+                dDayText = '미정';
+                dDayColor = 'bg-gray-100 text-gray-500';
+              } else if (dDay < 0) {
+                dDayText = `D+${Math.abs(dDay)}`;
+                dDayColor = s.payment_id && !s.is_paid ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500';
+              } else if (dDay === 0) {
+                dDayText = 'D-Day';
+                dDayColor = 'bg-orange-100 text-orange-700';
+              } else {
+                dDayText = `D-${dDay}`;
+                dDayColor = 'bg-gray-100 text-gray-500';
+              }
+              return (
+                <div key={s.id} className="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium min-w-[40px] text-center ${dDayColor}`}>
+                      {dDayText}
+                    </span>
+                    <span className="text-gray-700 font-medium">{s.name}</span>
+                    {s.payment_day && <span className="text-gray-400">{s.payment_day}일</span>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {s.payment_id ? (
+                      <span className={`font-semibold ${s.is_paid ? 'text-green-600' : 'text-gray-900'}`}>
+                        {fmt(s.amount)}원
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

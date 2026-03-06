@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Save, Building2, CreditCard, MessageSquare, Bell, FileText, Settings, Users, Handshake } from 'lucide-react';
+import { Save, Building2, CreditCard, MessageSquare, Bell, FileText, Settings, Users, Handshake, Wallet } from 'lucide-react';
 import TenantManage from './TenantManage';
 import PartnerManage from './PartnerManage';
+import PaymentManage from './PaymentManage';
 
 const FIELDS = [
   { section: 'building', icon: Building2, title: '건물 정보', fields: [
@@ -35,6 +36,7 @@ const SUB_TABS = [
   { id: 'general', label: '기본 설정', icon: Settings },
   { id: 'tenants', label: '입주사', icon: Users },
   { id: 'partners', label: '협력사', icon: Handshake },
+  { id: 'payments', label: '지급 관리', icon: Wallet },
 ];
 
 function SettingsGeneral({ settings, onSaved }) {
@@ -175,6 +177,7 @@ export default function SettingsView({ settings, onSaved }) {
       {subTab === 'general' && <SettingsGeneral settings={settings} onSaved={onSaved} />}
       {subTab === 'tenants' && <TenantManage />}
       {subTab === 'partners' && <PartnerManage />}
+      {subTab === 'payments' && <PaymentManage />}
     </div>
   );
 }

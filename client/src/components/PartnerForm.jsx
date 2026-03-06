@@ -18,6 +18,7 @@ export default function PartnerForm({ partner, onClose, onSaved }) {
     bank_name: partner?.bank_name || '',
     bank_account: partner?.bank_account || '',
     bank_holder: partner?.bank_holder || '',
+    payment_day: partner?.payment_day || '',
     is_active: partner?.is_active ?? true,
   });
   const [bizDocPreview, setBizDocPreview] = useState(
@@ -65,7 +66,7 @@ export default function PartnerForm({ partner, onClose, onSaved }) {
     setError('');
     setSaving(true);
     try {
-      const body = { ...form };
+      const body = { ...form, payment_day: form.payment_day ? Number(form.payment_day) : null };
       if (bizDocBase64) {
         body.biz_doc_base64 = bizDocBase64;
         body.biz_doc_filename = bizDocFilename;
@@ -120,20 +121,25 @@ export default function PartnerForm({ partner, onClose, onSaved }) {
               <input type="tel" value={form.contact_phone} onChange={(e) => set('contact_phone', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="010-0000-0000" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">회사명</label>
-              <input type="text" value={form.company_name} onChange={(e) => set('company_name', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">납기일</label>
+              <input type="number" min="1" max="28" value={form.payment_day} onChange={(e) => set('payment_day', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="매월 N일" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">회사명</label>
+              <input type="text" value={form.company_name} onChange={(e) => set('company_name', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">대표자</label>
               <input type="text" value={form.representative} onChange={(e) => set('representative', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">사업자등록번호</label>
-              <input type="text" value={form.business_number} onChange={(e) => set('business_number', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="000-00-00000" />
-            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">사업자등록번호</label>
+            <input type="text" value={form.business_number} onChange={(e) => set('business_number', e.target.value)} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="000-00-00000" />
           </div>
 
           <hr className="border-gray-200" />

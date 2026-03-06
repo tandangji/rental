@@ -307,6 +307,9 @@ const pool = new Pool({
   await pool.query(`ALTER TABLE partners ADD COLUMN IF NOT EXISTS bank_doc BYTEA`);
   await pool.query(`ALTER TABLE partners ADD COLUMN IF NOT EXISTS bank_doc_filename TEXT`);
 
+  // partners: 납기일 컬럼 마이그레이션
+  await pool.query(`ALTER TABLE partners ADD COLUMN IF NOT EXISTS payment_day INTEGER`);
+
   // partner_payments (협력사 지급내역)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS partner_payments (
@@ -1674,7 +1677,7 @@ const pool = new Pool({
   app.get("/partners", requireAdmin, async (req, res) => {
     const { type } = req.query;
     try {
-      let query = "SELECT id, type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, biz_doc_filename, bank_doc_filename, created_at FROM partners";
+      let query = "SELECT id, type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, biz_doc_filename, bank_doc_filename, payment_day, created_at FROM partners";
       const params = [];
       if (type) {
         query += " WHERE type = $1";
@@ -1690,7 +1693,7 @@ const pool = new Pool({
   });
 
   app.post("/partners", requireAdmin, async (req, res) => {
-    const { type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, biz_doc_base64, biz_doc_filename, bank_doc_base64, bank_doc_filename } = req.body;
+    const { type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, payment_day, biz_doc_base64, biz_doc_filename, bank_doc_base64, bank_doc_filename } = req.body;
     if (!type || !name) {
       return res.status(400).json({ error: "유형과 이름은 필수입니다" });
     }
@@ -1724,9 +1727,9 @@ const pool = new Pool({
       }
 
       const { rows } = await pool.query(
-        `INSERT INTO partners (type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, biz_doc, biz_doc_filename, bank_doc, bank_doc_filename)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
-        [type, name, contact_phone || null, memo || null, business_number || null, company_name || null, representative || null, bank_name || null, bank_account || null, bank_holder || null, is_active !== false, docBuf, docSafe, bankBuf, bankSafe]
+        `INSERT INTO partners (type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, biz_doc, biz_doc_filename, bank_doc, bank_doc_filename, payment_day)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+        [type, name, contact_phone || null, memo || null, business_number || null, company_name || null, representative || null, bank_name || null, bank_account || null, bank_holder || null, is_active !== false, docBuf, docSafe, bankBuf, bankSafe, payment_day || null]
       );
       res.json({ id: rows[0].id });
     } catch (err) {
@@ -1737,7 +1740,7 @@ const pool = new Pool({
 
   app.put("/partners/:id", requireAdmin, async (req, res) => {
     const { id } = req.params;
-    const { type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, biz_doc_base64, biz_doc_filename, bank_doc_base64, bank_doc_filename } = req.body;
+    const { type, name, contact_phone, memo, business_number, company_name, representative, bank_name, bank_account, bank_holder, is_active, payment_day, biz_doc_base64, biz_doc_filename, bank_doc_base64, bank_doc_filename } = req.body;
     try {
       const validateImage = (base64, filename) => {
         const data = base64.replace(/^data:[^;]+;base64,/, "");
@@ -1763,8 +1766,8 @@ const pool = new Pool({
         bankBuf = v.buf; bankSafe = v.safe;
       }
 
-      let query = `UPDATE partners SET type=COALESCE($1,type), name=COALESCE($2,name), contact_phone=$3, memo=$4, business_number=$5, company_name=$6, representative=$7, bank_name=$8, bank_account=$9, bank_holder=$10, is_active=COALESCE($11,is_active)`;
-      const params = [type, name, contact_phone ?? null, memo ?? null, business_number ?? null, company_name ?? null, representative ?? null, bank_name ?? null, bank_account ?? null, bank_holder ?? null, is_active];
+      let query = `UPDATE partners SET type=COALESCE($1,type), name=COALESCE($2,name), contact_phone=$3, memo=$4, business_number=$5, company_name=$6, representative=$7, bank_name=$8, bank_account=$9, bank_holder=$10, is_active=COALESCE($11,is_active), payment_day=$12`;
+      const params = [type, name, contact_phone ?? null, memo ?? null, business_number ?? null, company_name ?? null, representative ?? null, bank_name ?? null, bank_account ?? null, bank_holder ?? null, is_active, payment_day ?? null];
       if (docBuf !== undefined) {
         query += `, biz_doc=$${params.length + 1}, biz_doc_filename=$${params.length + 2}`;
         params.push(docBuf, docSafe);
@@ -1918,6 +1921,27 @@ const pool = new Pool({
       const paid = rows.find((r) => r.is_paid === true) || { count: 0, total: 0 };
       const unpaid = rows.find((r) => r.is_paid === false) || { count: 0, total: 0 };
       res.json({ year, month, paid: { count: paid.count, total: paid.total }, unpaid: { count: unpaid.count, total: unpaid.total } });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "서버 오류가 발생했습니다" });
+    }
+  });
+
+  // ─── Partner Payments Schedule API ─────────────────────────
+  app.get("/partner-payments/schedule", requireAdmin, async (req, res) => {
+    const { year, month } = req.query;
+    if (!year || !month) return res.status(400).json({ error: "year, month는 필수입니다" });
+    try {
+      const { rows } = await pool.query(
+        `SELECT p.id, p.name, p.type, p.payment_day, p.bank_name, p.bank_account,
+                pp.id as payment_id, pp.amount, pp.is_paid, pp.payment_date, pp.memo
+         FROM partners p
+         LEFT JOIN partner_payments pp ON pp.partner_id = p.id AND pp.year = $1 AND pp.month = $2
+         WHERE p.is_active = TRUE
+         ORDER BY p.payment_day ASC NULLS LAST, p.name ASC`,
+        [Number(year), Number(month)]
+      );
+      res.json(rows);
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "서버 오류가 발생했습니다" });

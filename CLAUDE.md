@@ -60,9 +60,10 @@ rental/
             ├── BuildingBillForm.jsx   # 건물 전체 공과금 입력 (아코디언)
             ├── BillingView.jsx        # 건물주 청구서 관리 (인라인 금액 편집 + 삭제)
             ├── TaxInvoiceView.jsx     # 세금계산서 (monthly_bills 파생, 발행 토글만)
-            ├── SettingsView.jsx       # 설정 (서브탭: 기본 설정/입주사/협력사)
+            ├── SettingsView.jsx       # 설정 (서브탭: 기본 설정/입주사/협력사/지급 관리)
             ├── PartnerManage.jsx      # 협력사 CRUD 목록 + 지급내역
             ├── PartnerForm.jsx        # 협력사 등록/수정 모달
+            ├── PaymentManage.jsx      # 지급 관리 (월별 협력사 지급 현황)
             ├── TenantDashboard.jsx    # 입주사 홈 (계약정보+청구)
             ├── MyBillView.jsx         # 입주사 청구서 (PDF 다운로드)
             ├── BankInfo.jsx           # 입금 계좌 안내 (복사 기능)
@@ -185,6 +186,7 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | is_active | BOOLEAN | 활성 여부 |
 | biz_doc | BYTEA | 사업자등록증 이미지 |
 | biz_doc_filename | TEXT | 파일명 |
+| payment_day | INTEGER | 납기일 (매월 N일, 1~28) |
 
 ### partner_payments (협력사 지급내역)
 | 컬럼 | 타입 | 설명 |
@@ -264,6 +266,7 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | PATCH | /partner-payments/:id/pay | 지급 토글 |
 | DELETE | /partner-payments/:id | 삭제 |
 | GET | /partner-payments/summary | 대시보드 요약 (이번 달) |
+| GET | /partner-payments/schedule | 월별 지급 일정 (?year, ?month) — partners LEFT JOIN partner_payments |
 
 ### 문의 (Inquiries)
 | Method | Path | 권한 | 설명 |
@@ -385,3 +388,4 @@ key-value 구조: building_name, landlord_name, landlord_business_number, landlo
 | v2.4 | 2026-03-06 | 협력사 관리 + 설정 서브탭 — partners/partner_payments 테이블, CRUD+지급내역 API 9개, 설정 서브탭(기본 설정/입주사/협력사), 하단 네비 7→6탭, 대시보드 지급 현황 카드 |
 | v2.5 | 2026-03-06 | 세금계산서 수동 관리 — tax_invoices 독립 CRUD(초안 생성/추가/수정/삭제/발행 토글), item_name 컬럼 추가, monthly_bills 파생 제거, TaxInvoiceForm 모달 신규 |
 | v2.6 | 2026-03-06 | 청구 중심 관리 — v2.5 세금계산서 독립 CRUD 롤백, monthly_bills를 유일한 원본(single source of truth)으로 복원. PUT/DELETE /monthly-bills/:id 추가(금액 수정/삭제), BillingView 인라인 편집+삭제 UI, 납부 버튼 '완료'→'입금완료', TaxInvoiceForm 삭제, 세금계산서 발행 토글 billId+item_type 방식 복원 |
+| v2.7 | 2026-03-06 | 협력사 납기일 + 지급 관리 — partners에 payment_day 컬럼 추가, GET /partner-payments/schedule API, 설정 서브탭 4번째(지급 관리) 추가, PaymentManage 컴포넌트(월별 지급 현황+요약+토글+추가/삭제), 대시보드 지급 일정 카드(D-day 컬러) |

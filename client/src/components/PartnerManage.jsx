@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, Phone, Building2, Banknote, Check, Clock } from 'lucide-react';
+import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, Phone, Building2, Banknote, Check, Clock, Calendar } from 'lucide-react';
 import PartnerForm from './PartnerForm';
 
 const TYPE_LABELS = { employee: '직원', vendor: '외주업체' };
@@ -176,6 +176,9 @@ export default function PartnerManage() {
                     )}
                     {p.bank_name && p.bank_account && (
                       <span className="flex items-center gap-1"><Banknote className="w-3 h-3" />{p.bank_name} {p.bank_account} ({p.bank_holder || '-'})</span>
+                    )}
+                    {p.payment_day && (
+                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />매월 {p.payment_day}일 지급</span>
                     )}
                   </div>
 
