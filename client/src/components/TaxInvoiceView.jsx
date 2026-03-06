@@ -164,6 +164,11 @@ export default function TaxInvoiceView() {
         </button>
       </div>
 
+      {/* 안내 */}
+      <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-700 text-xs">
+        임대료·관리비 세금계산서는 <b>매월 20일</b>에 발행합니다. 공과금은 배분 확정 후 발행합니다.
+      </div>
+
       {/* Action buttons */}
       {tab === 'pending' && pending.length > 0 && (
         <div className="mb-4">
