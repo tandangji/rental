@@ -5,7 +5,8 @@ import { compressImage } from '../utils/imageCompress';
 
 export default function PartnerForm({ partner, onClose, onSaved }) {
   const isEdit = !!partner;
-  const fileRef = useRef(null);
+  const bizFileRef = useRef(null);
+  const bankFileRef = useRef(null);
   const [form, setForm] = useState({
     type: partner?.type || 'employee',
     name: partner?.name || '',
@@ -24,13 +25,17 @@ export default function PartnerForm({ partner, onClose, onSaved }) {
   );
   const [bizDocBase64, setBizDocBase64] = useState(null);
   const [bizDocFilename, setBizDocFilename] = useState(partner?.biz_doc_filename || '');
+  const [bankDocPreview, setBankDocPreview] = useState(
+    partner?.bank_doc_filename ? `${API_BASE}/partners/${partner.id}/bank-doc` : null
+  );
+  const [bankDocBase64, setBankDocBase64] = useState(null);
+  const [bankDocFilename, setBankDocFilename] = useState(partner?.bank_doc_filename || '');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
 
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0];
+  const handleImageUpload = async (file, setPreview, setBase64, setFilename) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       setError('이미지 파일만 업로드 가능합니다');
@@ -43,11 +48,11 @@ export default function PartnerForm({ partner, onClose, onSaved }) {
     setError('');
     try {
       const compressed = await compressImage(file);
-      setBizDocPreview(URL.createObjectURL(compressed));
+      setPreview(URL.createObjectURL(compressed));
       const reader = new FileReader();
       reader.onload = () => {
-        setBizDocBase64(reader.result);
-        setBizDocFilename(file.name);
+        setBase64(reader.result);
+        setFilename(file.name);
       };
       reader.readAsDataURL(compressed);
     } catch {
@@ -64,6 +69,10 @@ export default function PartnerForm({ partner, onClose, onSaved }) {
       if (bizDocBase64) {
         body.biz_doc_base64 = bizDocBase64;
         body.biz_doc_filename = bizDocFilename;
+      }
+      if (bankDocBase64) {
+        body.bank_doc_base64 = bankDocBase64;
+        body.bank_doc_filename = bankDocFilename;
       }
       const url = isEdit ? `${API_BASE}/partners/${partner.id}` : `${API_BASE}/partners`;
       const method = isEdit ? 'PUT' : 'POST';
@@ -149,17 +158,30 @@ export default function PartnerForm({ partner, onClose, onSaved }) {
             <textarea value={form.memo} onChange={(e) => set('memo', e.target.value)} rows={2} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm resize-none" />
           </div>
 
-          {/* 사업자등록증 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">사업자등록증</label>
-            <input type="file" ref={fileRef} accept="image/*" onChange={handleFileChange} className="hidden" />
-            <button type="button" onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
-              <Upload className="w-4 h-4 text-gray-500" />
-              {bizDocFilename || '파일 선택'}
-            </button>
-            {bizDocPreview && (
-              <img src={bizDocPreview} alt="사업자등록증" className="mt-2 max-h-40 rounded-lg border border-gray-200" />
-            )}
+          {/* 서류 업로드 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">사업자등록증</label>
+              <input type="file" ref={bizFileRef} accept="image/*" onChange={(e) => handleImageUpload(e.target.files?.[0], setBizDocPreview, setBizDocBase64, setBizDocFilename)} className="hidden" />
+              <button type="button" onClick={() => bizFileRef.current?.click()} className="w-full flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 truncate">
+                <Upload className="w-4 h-4 text-gray-500 shrink-0" />
+                <span className="truncate">{bizDocFilename || '파일 선택'}</span>
+              </button>
+              {bizDocPreview && (
+                <img src={bizDocPreview} alt="사업자등록증" className="mt-2 max-h-32 rounded-lg border border-gray-200" />
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">통장사본</label>
+              <input type="file" ref={bankFileRef} accept="image/*" onChange={(e) => handleImageUpload(e.target.files?.[0], setBankDocPreview, setBankDocBase64, setBankDocFilename)} className="hidden" />
+              <button type="button" onClick={() => bankFileRef.current?.click()} className="w-full flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 truncate">
+                <Upload className="w-4 h-4 text-gray-500 shrink-0" />
+                <span className="truncate">{bankDocFilename || '파일 선택'}</span>
+              </button>
+              {bankDocPreview && (
+                <img src={bankDocPreview} alt="통장사본" className="mt-2 max-h-32 rounded-lg border border-gray-200" />
+              )}
+            </div>
           </div>
 
           {isEdit && (
