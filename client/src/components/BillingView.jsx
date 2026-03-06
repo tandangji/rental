@@ -528,16 +528,23 @@ export default function BillingView() {
                         <p className="text-[11px] text-gray-400">공급 {fmt(amount)}</p>
                         <p className="text-[11px] text-gray-400">세액 {fmt(v)}</p>
                       </div>
-                      <button
-                        onClick={() => handleTogglePay(bill.id, field)}
-                        className={`px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
-                          isPaid
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                        }`}
-                      >
-                        {isPaid ? '입금완료' : '대기'}
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full whitespace-nowrap ${
+                          isPaid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {isPaid ? '완료' : '대기'}
+                        </span>
+                        <button
+                          onClick={() => handleTogglePay(bill.id, field)}
+                          className={`px-2 py-1 text-xs rounded whitespace-nowrap ${
+                            isPaid
+                              ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                          }`}
+                        >
+                          {isPaid ? '취소' : '입금확인'}
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -556,16 +563,23 @@ export default function BillingView() {
                       <p className="text-[11px] text-gray-400">공급 {fmt(bill.other_amount)}</p>
                       <p className="text-[11px] text-gray-400">세액 {fmt(vatOf(bill.other_amount, false))}</p>
                     </div>
-                    <button
-                      onClick={() => handleTogglePay(bill.id, 'other_paid')}
-                      className={`px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
-                        bill.other_paid
-                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                          : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                      }`}
-                    >
-                      {bill.other_paid ? '입금완료' : '대기'}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full whitespace-nowrap ${
+                        bill.other_paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {bill.other_paid ? '완료' : '대기'}
+                      </span>
+                      <button
+                        onClick={() => handleTogglePay(bill.id, 'other_paid')}
+                        className={`px-2 py-1 text-xs rounded whitespace-nowrap ${
+                          bill.other_paid
+                            ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                      >
+                        {bill.other_paid ? '취소' : '입금확인'}
+                      </button>
+                    </div>
                   </div>
                 )}
 
