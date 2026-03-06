@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
 import BuildingBillForm from './BuildingBillForm';
-import { FileText, MessageSquare, Plus, Pencil, Upload, Download } from 'lucide-react';
+import { MessageSquare, Plus, Pencil, Upload, Download } from 'lucide-react';
 
 const PAY_FIELDS = [
   { field: 'rent_paid', label: '임대료', amountField: 'rent_amount' },
@@ -254,17 +254,7 @@ export default function BillingView() {
         </div>
       </div>
 
-      {/* Building bill form */}
-      <div className="mb-4">
-        <BuildingBillForm year={year} month={month} onSaved={loadBills} />
-      </div>
-
-      {/* Info */}
-      <div className="mb-4 p-3 rounded-lg bg-blue-50 text-blue-700 text-xs">
-        임대료/관리비는 각 입주사의 청구일에 자동 생성됩니다. 건물 공과금 입력 후 공과금 배분을 실행하세요.
-      </div>
-
-      {/* Generate buttons */}
+      {/* 청구서 생성/수정 */}
       <div className="flex gap-2 mb-4">
         <button
           onClick={handleGenerateRent}
@@ -273,38 +263,32 @@ export default function BillingView() {
         >
           <Plus className="w-4 h-4" /> {generatingRent ? '발행 중...' : '임대료/관리비'}
         </button>
-        <button
-          onClick={handleGenerate}
-          disabled={generating}
-          className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 min-h-[44px]"
-        >
-          <FileText className="w-4 h-4" /> {generating ? '배분 중...' : '공과금 배분'}
-        </button>
         {bills.length > 0 && (
-          <button
-            onClick={handleSendReminder}
-            className="flex items-center gap-1 px-3 py-2.5 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600 min-h-[44px]"
-          >
-            <MessageSquare className="w-4 h-4" /> 미납 알림
-          </button>
+          <>
+            <button
+              onClick={handleDownloadTemplate}
+              className="flex items-center gap-1 px-3 py-2.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 min-h-[44px]"
+            >
+              <Download className="w-3.5 h-3.5" /> 양식 다운로드
+            </button>
+            <label className="flex items-center gap-1 px-3 py-2.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer min-h-[44px]">
+              <Upload className="w-3.5 h-3.5" /> Excel 업로드
+              <input type="file" accept=".xlsx,.xls" onChange={handleUploadExcel} className="hidden" />
+            </label>
+            <button
+              onClick={handleSendReminder}
+              className="flex items-center gap-1 px-3 py-2.5 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600 min-h-[44px]"
+            >
+              <MessageSquare className="w-4 h-4" /> 미납
+            </button>
+          </>
         )}
       </div>
 
-      {/* Excel 업로드/다운로드 */}
-      {bills.length > 0 && (
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={handleDownloadTemplate}
-            className="flex items-center gap-1 px-3 py-2 text-xs border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            <Download className="w-3.5 h-3.5" /> 양식 다운로드
-          </button>
-          <label className="flex items-center gap-1 px-3 py-2 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer">
-            <Upload className="w-3.5 h-3.5" /> Excel 업로드
-            <input type="file" accept=".xlsx,.xls" onChange={handleUploadExcel} className="hidden" />
-          </label>
-        </div>
-      )}
+      {/* 공과금 입력 + 배분 */}
+      <div className="mb-4">
+        <BuildingBillForm year={year} month={month} onSaved={loadBills} onDistribute={handleGenerate} distributing={generating} />
+      </div>
 
       {/* 대조 결과 */}
       {compareData && (

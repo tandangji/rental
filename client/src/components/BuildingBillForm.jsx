@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../utils/api';
-import { Save, Zap, Droplets, ChevronDown, ChevronUp } from 'lucide-react';
+import { Save, Zap, Droplets, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 
-export default function BuildingBillForm({ year, month, onSaved }) {
+export default function BuildingBillForm({ year, month, onSaved, onDistribute, distributing }) {
   const [form, setForm] = useState({ electricity_total: 0, water_total: 0 });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -110,9 +110,16 @@ export default function BuildingBillForm({ year, month, onSaved }) {
             <span className="font-bold text-gray-900">{fmt(total)}원</span>
           </div>
           {message && <p className="mt-2 text-sm text-green-600">{message}</p>}
-          <button onClick={handleSave} disabled={saving} className="mt-3 w-full flex items-center justify-center gap-1 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 min-h-[44px]">
-            <Save className="w-4 h-4" /> {saving ? '저장 중...' : '공과금 저장'}
-          </button>
+          <div className="mt-3 flex gap-2">
+            <button onClick={handleSave} disabled={saving} className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 min-h-[44px]">
+              <Save className="w-4 h-4" /> {saving ? '저장 중...' : '공과금 저장'}
+            </button>
+            {onDistribute && (
+              <button onClick={onDistribute} disabled={distributing} className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 min-h-[44px]">
+                <FileText className="w-4 h-4" /> {distributing ? '배분 중...' : '공과금 배분'}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
