@@ -41,7 +41,7 @@ export function compressImage(file) {
           // JPEG로 압축하여 data URL 반환
           const dataUrl = canvas.toDataURL('image/jpeg', QUALITY);
           resolve(dataUrl);
-        } catch (e) {
+        } catch (_e) {
           // canvas 실패 시 원본 반환
           resolve(reader.result);
         }

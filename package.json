@@ -4,9 +4,15 @@
   "description": "임대 관리 시스템",
   "scripts": {
     "build": "cd server && npm install && cd ../client && npm install && npm run build",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "lint": "eslint client/src server"
   },
   "engines": {
     "node": "20"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.0.3",
+    "globals": "^17.4.0"
   }
 }

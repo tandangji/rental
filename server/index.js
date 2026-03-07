@@ -303,13 +303,13 @@ const WATER_SUB_METERS = {
     )
   `);
   // Migration: 기존 테이블에 item_type 컬럼 추가
-  try { await pool.query("ALTER TABLE tax_invoices ADD COLUMN IF NOT EXISTS item_type TEXT NOT NULL DEFAULT 'rent'"); } catch {}
+  try { await pool.query("ALTER TABLE tax_invoices ADD COLUMN IF NOT EXISTS item_type TEXT NOT NULL DEFAULT 'rent'"); } catch (_err) { /* 이미 존재 */ }
   // 기존 UNIQUE(tenant_id, year, month) 제약조건 제거
-  try { await pool.query("ALTER TABLE tax_invoices DROP CONSTRAINT IF EXISTS tax_invoices_tenant_id_year_month_key"); } catch {}
+  try { await pool.query("ALTER TABLE tax_invoices DROP CONSTRAINT IF EXISTS tax_invoices_tenant_id_year_month_key"); } catch (_err) { /* 제약조건 없음 */ }
   // 새 UNIQUE INDEX 생성
-  try { await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_tax_inv_unique ON tax_invoices (tenant_id, year, month, item_type)"); } catch {}
+  try { await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_tax_inv_unique ON tax_invoices (tenant_id, year, month, item_type)"); } catch (_err) { /* 이미 존재 */ }
   // Migration: item_name 컬럼 추가
-  try { await pool.query("ALTER TABLE tax_invoices ADD COLUMN IF NOT EXISTS item_name TEXT"); } catch {}
+  try { await pool.query("ALTER TABLE tax_invoices ADD COLUMN IF NOT EXISTS item_name TEXT"); } catch (_err) { /* 이미 존재 */ }
 
   // partners (협력사/직원)
   await pool.query(`
@@ -377,8 +377,8 @@ const WATER_SUB_METERS = {
   `);
 
   // tenants.floor UNIQUE/NOT NULL 제거 (머지 전에 해제해야 floor=NULL 가능)
-  try { await pool.query(`ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_floor_key`); } catch {}
-  try { await pool.query(`ALTER TABLE tenants ALTER COLUMN floor DROP NOT NULL`); } catch {}
+  try { await pool.query(`ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_floor_key`); } catch (_err) { /* 제약조건 없음 */ }
+  try { await pool.query(`ALTER TABLE tenants ALTER COLUMN floor DROP NOT NULL`); } catch (_err) { /* 이미 nullable */ }
 
   // ─── 브이모먼트 다중층 머지 (2층+4층 → 1개 tenant) ───────
   {
@@ -450,9 +450,9 @@ const WATER_SUB_METERS = {
 
   // ─── meter_readings: sub_meter 컬럼 + UNIQUE 제약 변경 ─────────
   await pool.query(`ALTER TABLE meter_readings ADD COLUMN IF NOT EXISTS sub_meter TEXT`);
-  try { await pool.query(`ALTER TABLE meter_readings DROP CONSTRAINT IF EXISTS meter_readings_tenant_id_year_month_utility_type_key`); } catch {}
-  try { await pool.query(`DROP INDEX IF EXISTS idx_meter_readings_unique`); } catch {}
-  try { await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meter_readings_unique ON meter_readings (tenant_id, floor, year, month, utility_type, COALESCE(sub_meter, ''))`); } catch {}
+  try { await pool.query(`ALTER TABLE meter_readings DROP CONSTRAINT IF EXISTS meter_readings_tenant_id_year_month_utility_type_key`); } catch (_err) { /* 제약조건 없음 */ }
+  try { await pool.query(`DROP INDEX IF EXISTS idx_meter_readings_unique`); } catch (_err) { /* 인덱스 없음 */ }
+  try { await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meter_readings_unique ON meter_readings (tenant_id, floor, year, month, utility_type, COALESCE(sub_meter, ''))`); } catch (_err) { /* 이미 존재 */ }
 
 
   console.log("테이블 초기화 완료");
@@ -931,7 +931,7 @@ const WATER_SUB_METERS = {
       query += " ORDER BY mr.floor ASC, mr.utility_type ASC";
       const { rows } = await pool.query(query, params);
       // Strip photo BYTEA from list response
-      const result = rows.map(({ photo, ...rest }) => rest);
+      const result = rows.map(({ photo: _photo, ...rest }) => rest);
       res.json(result);
     } catch (err) {
       console.error(err);

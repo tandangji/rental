@@ -4,7 +4,7 @@ export function getToken() {
   try {
     const saved = localStorage.getItem('rental_session');
     if (saved) return JSON.parse(saved).token || '';
-  } catch {}
+  } catch { /* localStorage 파싱 실패 무시 */ }
   return '';
 }
 
